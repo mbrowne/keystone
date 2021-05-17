@@ -1,5 +1,21 @@
 # @keystone-next/keystone
 
+## 18.0.0
+
+### Major Changes
+
+- [#5746](https://github.com/keystonejs/keystone/pull/5746) [`19750d2dc`](https://github.com/keystonejs/keystone/commit/19750d2dc5801cc8d2ffae1f50d1d5ca6ab9407d) Thanks [@timleslie](https://github.com/timleslie)! - Update Node.js dependency to `^12.20 || >= 14.13`.
+
+### Patch Changes
+
+- Updated dependencies [[`19750d2dc`](https://github.com/keystonejs/keystone/commit/19750d2dc5801cc8d2ffae1f50d1d5ca6ab9407d)]:
+  - @keystone-next/admin-ui@15.0.0
+  - @keystone-next/fields@9.0.0
+  - @keystone-next/types@18.0.0
+  - @keystone-next/access-control-legacy@11.0.0
+  - @keystone-next/adapter-prisma-legacy@7.0.0
+  - @keystone-next/utils-legacy@11.0.0
+
 ## 17.2.0
 
 ### Minor Changes

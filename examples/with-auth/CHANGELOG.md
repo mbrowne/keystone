@@ -1,5 +1,18 @@
 # @keystone-next/example-with-auth
 
+## 2.0.0
+
+### Major Changes
+
+- [#5746](https://github.com/keystonejs/keystone/pull/5746) [`19750d2dc`](https://github.com/keystonejs/keystone/commit/19750d2dc5801cc8d2ffae1f50d1d5ca6ab9407d) Thanks [@timleslie](https://github.com/timleslie)! - Update Node.js dependency to `^12.20 || >= 14.13`.
+
+### Patch Changes
+
+- Updated dependencies [[`194bbeea2`](https://github.com/keystonejs/keystone/commit/194bbeea29ed1103507202b762f4ac26778f25ed), [`19750d2dc`](https://github.com/keystonejs/keystone/commit/19750d2dc5801cc8d2ffae1f50d1d5ca6ab9407d)]:
+  - @keystone-next/auth@25.0.0
+  - @keystone-next/fields@9.0.0
+  - @keystone-next/keystone@18.0.0
+
 ## 1.0.0
 
 ### Major Changes
