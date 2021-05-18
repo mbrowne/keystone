@@ -25,7 +25,7 @@
     "@preconstruct/next": "^3.0.0",
     "@ts-gql/schema": "^0.5.1",
     "@types/apollo-upload-client": "14.1.0",
-    "@types/react": "^17.0.5",
+    "@types/react": "^17.0.6",
     "apollo-upload-client": "^15.0.0",
     "clipboard-copy": "^4.0.1",
     "express": "^4.17.1",
