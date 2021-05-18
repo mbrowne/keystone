@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  app:
+    image: node:14.17.0-buster-slim
+    volumes:
+      - $HOME/.npmrc:/home/node/.npmrc
+      - ../:/server
+    command: tail -f /dev/null
+
+  postgres:
+    image: postgres:13.3-alpine
+    environment:
+      POSTGRES_USER: demouser
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: demo
+    ports:
+      - 5432:5432
