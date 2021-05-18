@@ -28,6 +28,9 @@ export type KeystoneConfig = {
   session?: () => SessionStrategy<any>;
   graphql?: GraphQLConfig;
   extendGraphqlSchema?: ExtendGraphqlSchema;
+  graphqlProviders?: any[],
+  disableDefaultCRUDProvider?: boolean,
+
   files?: FilesConfig;
   images?: ImagesConfig;
   /** Experimental config options */

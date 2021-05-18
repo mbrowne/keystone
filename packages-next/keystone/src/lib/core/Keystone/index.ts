@@ -20,6 +20,7 @@ export class Keystone implements BaseKeystone {
   onConnect: (keystone: BaseKeystone, args?: { context: KeystoneContext }) => Promise<void>;
   _listCRUDProvider: any;
   _providers: any[];
+  _disableDefaultCRUDProvider: boolean;
   adapter: PrismaAdapter;
   queryLimits: { maxTotalResults: number };
 
@@ -27,17 +28,31 @@ export class Keystone implements BaseKeystone {
     adapter,
     onConnect,
     queryLimits = {},
+    graphqlProviders = [],
+    disableDefaultCRUDProvider = false,
   }: {
     adapter: PrismaAdapter;
     onConnect: (keystone: BaseKeystone, args?: { context: KeystoneContext }) => Promise<void>;
     queryLimits: { maxTotalResults?: number | undefined } | undefined;
+    graphqlProviders?: any[];
+    disableDefaultCRUDProvider?: boolean;
   }) {
     this.lists = {};
     this.listsArray = [];
     this.getListByKey = key => this.lists[key];
     this.onConnect = onConnect;
-    this._listCRUDProvider = new ListCRUDProvider();
-    this._providers = [this._listCRUDProvider];
+    this._disableDefaultCRUDProvider = disableDefaultCRUDProvider;
+
+    if (disableDefaultCRUDProvider) {
+      if (!graphqlProviders.length) {
+        throw new Error('A non-empty array of graphqlProviders must be provided when disableDefaultCRUDProvider is true');
+      }
+    } else {
+      this._listCRUDProvider = new ListCRUDProvider();
+    }
+    this._providers = disableDefaultCRUDProvider
+      ? graphqlProviders
+      : [this._listCRUDProvider, ...graphqlProviders];
     this.adapter = adapter;
     this.queryLimits = { maxTotalResults: Infinity, ...queryLimits };
     if (this.queryLimits.maxTotalResults < 1) {
@@ -70,8 +85,13 @@ export class Keystone implements BaseKeystone {
     const list: BaseKeystoneList = new List(key, config, { getListByKey, adapter });
     this.lists[key] = list;
     this.listsArray.push(list);
-    this._listCRUDProvider.lists.push(list);
     list.initFields();
+
+    if (!this._disableDefaultCRUDProvider) {
+      this._listCRUDProvider.lists.push(list);
+    }
+    
+
     return list;
   }
 
@@ -232,6 +252,11 @@ export class Keystone implements BaseKeystone {
   }
 
   getResolvers({ schemaName }: { schemaName: string }) {
+    const Query = {
+      ...objMerge(this._providers.map(p => p.getQueryResolvers({ schemaName }))),
+    };
+    // console.log('Query', Query);
+
     // Like the `typeDefs`, we want to dedupe the resolvers. We rely on the
     // semantics of the JS spread operator here (duplicate keys are overridden
     // - last one wins)
@@ -242,7 +267,9 @@ export class Keystone implements BaseKeystone {
       // Order of spreading is important here - we don't want user-defined types
       // to accidentally override important things like `Query`.
       ...objMerge(this._providers.map(p => p.getTypeResolvers({ schemaName }))),
-      Query: objMerge(this._providers.map(p => p.getQueryResolvers({ schemaName }))),
+      Query: {
+        ...objMerge(this._providers.map(p => p.getQueryResolvers({ schemaName }))),
+      },
       Mutation: objMerge(this._providers.map(p => p.getMutationResolvers({ schemaName }))),
       Subscription: objMerge(this._providers.map(p => p.getSubscriptionResolvers({ schemaName }))),
       Upload: GraphQLUpload,

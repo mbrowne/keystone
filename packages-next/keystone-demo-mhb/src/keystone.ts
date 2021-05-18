@@ -6,6 +6,7 @@ import {
 import { createAuth } from '@keystone-next/auth';
 
 import { lists } from './schema';
+import { ArtnetCRUDProvider } from './graphql-providers/crud'
 
 let sessionSecret = process.env.SESSION_SECRET;
 
@@ -30,11 +31,17 @@ const auth = createAuth({
   },
 });
 
+const artnetCrudProvider = new ArtnetCRUDProvider()
+
 export default auth.withAuth(
   config({
     db: {
       adapter: 'prisma_postgresql',
       url: process.env.DATABASE_URL || 'postgres://demouser:demo@localhost:5432/demo',
+      onConnect: async keystoneContext => {
+        console.log('keystoneContext.lists[0]', keystoneContext.lists[0])
+        // artnetCrudProvider.lists = keystoneContext.lists
+      }
     },
     ui: {
       isAccessAllowed: (context) => !!context.session?.data,
@@ -47,5 +54,9 @@ export default auth.withAuth(
       }),
       { User: 'name' }
     ),
+    disableDefaultCRUDProvider: true,
+    graphqlProviders: [
+      artnetCrudProvider
+    ],
   })
 );

@@ -5,18 +5,21 @@ import { Keystone } from './core/Keystone/index';
 export function createKeystone(
   config: KeystoneConfig,
   provider: DatabaseProvider,
-  prismaClient?: any
+  prismaClient?: any,
 ) {
   // Note: For backwards compatibility we may want to expose
   // this as a public API so that users can start their transition process
   // by using this pattern for creating their Keystone object before using
   // it in their existing custom servers or original CLI systems.
-  const { db, graphql, lists } = config;
+  const { db, graphql, lists, graphqlProviders, disableDefaultCRUDProvider } = config;
+
   const adapter = new PrismaAdapter({ prismaClient, ...db, provider });
   // @ts-ignore The @types/keystonejs__keystone package has the wrong type for KeystoneOptions
   const keystone: BaseKeystone = new Keystone({
     adapter,
     queryLimits: graphql?.queryLimits,
+    graphqlProviders,
+    disableDefaultCRUDProvider,
     // We call context.sudo() here to regenerate the `context` object *after* the keystone.connect()
     // step. This ensures that context.prisma is correctly set up.
     // @ts-ignore The @types/keystonejs__keystone package has the wrong type for KeystoneOptions

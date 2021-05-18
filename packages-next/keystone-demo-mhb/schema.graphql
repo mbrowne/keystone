@@ -392,6 +392,10 @@ type _QueryMeta {
   count: Int
 }
 
+type UserResults {
+  totalCount: Int!
+}
+
 type Mutation {
   """
    Create a single User item.
@@ -614,6 +618,7 @@ type Query {
     first: Int
     skip: Int
   ): _QueryMeta
+  foo: UserResults!
   authenticatedItem: AuthenticatedItem
   keystone: KeystoneMeta!
 }
