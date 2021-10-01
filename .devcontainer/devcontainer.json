@@ -21,7 +21,7 @@
   },
 
   // Add the IDs of extensions you want installed when the container is created.
-  "extensions": ["esbenp.prettier-vscode"],
+  "extensions": ["esbenp.prettier-vscode", "whtouche.vscode-js-console-utils"],
 
   // Uncomment the next line to run commands after the container is created - for example installing curl.
   "postCreateCommand": "apt-get update && apt-get install -y git"
