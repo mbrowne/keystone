@@ -1,4 +1,12 @@
-import { DBField, MultiDBField, NoDBField, ScalarishDBField } from '../../types';
+import {
+  DBField,
+  MultiDBField,
+  NoDBField,
+  PolymorphicRelationDBField,
+  RelationDBField,
+  ScalarishDBField,
+} from '../../types';
+import { field } from '../../types/schema/schema-api-with-context';
 
 type BaseResolvedRelationDBField = {
   kind: 'relation';
@@ -14,7 +22,8 @@ export type ResolvedRelationDBField =
   | (BaseResolvedRelationDBField & {
       mode: 'one';
       foreignIdField: 'none' | 'owned' | 'owned-unique';
-    });
+    })
+  | PolymorphicRelationDBField;
 
 export type ListsWithResolvedRelations = Record<
   string,
@@ -67,164 +76,24 @@ export function resolveRelationships(
   );
   for (const [listKey, fields] of Object.entries(lists)) {
     const resolvedList = resolvedLists[listKey];
-    for (const [fieldPath, { dbField: field }] of Object.entries(fields.fields)) {
-      if (field.kind !== 'relation') {
-        resolvedList[fieldPath] = field;
+    for (const [fieldPath, { dbField }] of Object.entries(fields.fields)) {
+      if (dbField.kind !== 'relation') {
+        if (dbField.kind === 'polymorphicRelation' && fieldPath === 'order') {
+          throw new Error(`Invalid field name for polymorphic relationship: '${fieldPath}'`);
+        }
+
+        resolvedList[fieldPath] = dbField;
         continue;
       }
-      const foreignUnresolvedList = lists[field.list];
-      if (!foreignUnresolvedList) {
-        throw new Error(
-          `The relationship field at ${listKey}.${fieldPath} points to the list ${listKey} which does not exist`
-        );
-      }
-      if (field.field) {
-        const localRef = `${listKey}.${fieldPath}`;
-        const foreignRef = `${field.list}.${field.field}`;
-        if (alreadyResolvedTwoSidedRelationships.has(localRef)) {
-          continue;
-        }
-        alreadyResolvedTwoSidedRelationships.add(foreignRef);
-        const foreignField = foreignUnresolvedList.fields[field.field]?.dbField;
-        if (!foreignField) {
-          throw new Error(
-            `The relationship field at ${localRef} points to ${foreignRef} but no field at ${foreignRef} exists`
-          );
-        }
 
-        if (foreignField.kind !== 'relation') {
-          throw new Error(
-            `The relationship field at ${localRef} points to ${foreignRef} but ${foreignRef} is not a relationship field`
-          );
-        }
-
-        if (foreignField.list !== listKey) {
-          throw new Error(
-            `The relationship field at ${localRef} points to ${foreignRef} but ${foreignRef} points to the list ${foreignField.list} rather than ${listKey}`
-          );
-        }
-
-        if (foreignField.field === undefined) {
-          throw new Error(
-            `The relationship field at ${localRef} points to ${foreignRef}, ${localRef} points to ${listKey} correctly but does not point to the ${fieldPath} field when it should`
-          );
-        }
-
-        if (foreignField.field !== fieldPath) {
-          throw new Error(
-            `The relationship field at ${localRef} points to ${foreignRef}, ${localRef} points to ${listKey} correctly but points to the ${foreignField.field} field instead of ${fieldPath}`
-          );
-        }
-
-        let [leftRel, rightRel] = sortRelationships(
-          { listKey, fieldPath, mode: field.mode },
-          { listKey: field.list, fieldPath: field.field, mode: foreignField.mode }
-        );
-
-        if (leftRel.mode === 'one' && rightRel.mode === 'one') {
-          const relationName = `${leftRel.listKey}_${leftRel.fieldPath}`;
-          resolvedLists[leftRel.listKey][leftRel.fieldPath] = {
-            kind: 'relation',
-            mode: 'one',
-            field: rightRel.fieldPath,
-            list: rightRel.listKey,
-            foreignIdField: 'owned-unique',
-            relationName,
-          };
-          resolvedLists[rightRel.listKey][rightRel.fieldPath] = {
-            kind: 'relation',
-            mode: 'one',
-            field: leftRel.fieldPath,
-            list: leftRel.listKey,
-            foreignIdField: 'none',
-            relationName,
-          };
-          continue;
-        }
-        if (leftRel.mode === 'many' && rightRel.mode === 'many') {
-          const relationName = `${leftRel.listKey}_${leftRel.fieldPath}_${rightRel.listKey}_${rightRel.fieldPath}`;
-          resolvedLists[leftRel.listKey][leftRel.fieldPath] = {
-            kind: 'relation',
-            mode: 'many',
-            field: rightRel.fieldPath,
-            list: rightRel.listKey,
-            relationName,
-          };
-          resolvedLists[rightRel.listKey][rightRel.fieldPath] = {
-            kind: 'relation',
-            mode: 'many',
-            field: leftRel.fieldPath,
-            list: leftRel.listKey,
-            relationName,
-          };
-          continue;
-        }
-        // if we're here, we're in a 1:N
-        // and we want to make sure the 1 side on the left and the many on the right
-        // (technically only one of these checks is necessary, the other one will have to be true if one is
-        // but this communicates what's going on here)
-        if (leftRel.mode === 'many' && rightRel.mode === 'one') {
-          [leftRel, rightRel] = [rightRel, leftRel];
-        }
-        const relationName = `${leftRel.listKey}_${leftRel.fieldPath}`;
-        resolvedLists[leftRel.listKey][leftRel.fieldPath] = {
-          kind: 'relation',
-          mode: 'one',
-          field: rightRel.fieldPath,
-          list: rightRel.listKey,
-          foreignIdField: 'owned',
-          relationName,
-        };
-        resolvedLists[rightRel.listKey][rightRel.fieldPath] = {
-          kind: 'relation',
-          mode: 'many',
-          field: leftRel.fieldPath,
-          list: leftRel.listKey,
-          relationName,
-        };
-        continue;
-      }
-      const foreignFieldPath = `from_${listKey}_${fieldPath}`;
-      if (foreignUnresolvedList.fields[foreignFieldPath]) {
-        throw new Error(
-          `The relationship field at ${listKey}.${fieldPath} points to the list ${field.list}, Keystone needs to a create a relationship field at ${field.list}.${foreignFieldPath} to support the relationship at ${listKey}.${fieldPath} but ${field.list} already has a field named ${foreignFieldPath}`
-        );
-      }
-
-      if (field.mode === 'many') {
-        const relationName = `${listKey}_${fieldPath}_many`;
-        resolvedLists[field.list][foreignFieldPath] = {
-          kind: 'relation',
-          mode: 'many',
-          list: listKey,
-          field: fieldPath,
-          relationName,
-        };
-        resolvedList[fieldPath] = {
-          kind: 'relation',
-          mode: 'many',
-          list: field.list,
-          field: foreignFieldPath,
-          relationName,
-        };
-      } else {
-        const relationName = `${listKey}_${fieldPath}`;
-        resolvedLists[field.list][foreignFieldPath] = {
-          kind: 'relation',
-          mode: 'many',
-          list: listKey,
-          field: fieldPath,
-          relationName,
-        };
-        resolvedList[fieldPath] = {
-          kind: 'relation',
-          list: field.list,
-          field: foreignFieldPath,
-          foreignIdField: 'owned',
-          relationName,
-          mode: 'one',
-        };
-      }
+      resolveRelationship(
+        listKey,
+        fieldPath,
+        dbField,
+        lists,
+        resolvedLists,
+        alreadyResolvedTwoSidedRelationships
+      );
     }
   }
   // the way we resolve the relationships means that the relationships will be in a
@@ -238,9 +107,175 @@ export function resolveRelationships(
       const resolvedDbFields = Object.fromEntries(
         Object.keys(lists[listKey].fields).map(fieldKey => [fieldKey, outOfOrderDbFields[fieldKey]])
       );
+
       // then we add the opposites to one-sided relations
       Object.assign(resolvedDbFields, outOfOrderDbFields);
       return [listKey, { resolvedDbFields }];
     })
   );
+}
+
+function resolveRelationship(
+  listKey: string,
+  fieldPath: string,
+  field: RelationDBField<'many' | 'one'>,
+  lists: Record<string, { fields: Record<string, { dbField: DBField }> }>,
+  resolvedLists: Record<string, Record<string, ResolvedDBField>>,
+  alreadyResolvedTwoSidedRelationships: Set<string>
+) {
+  const resolvedList = resolvedLists[listKey];
+
+  const foreignUnresolvedList = lists[field.list];
+  if (!foreignUnresolvedList) {
+    throw new Error(
+      `The relationship field at ${listKey}.${fieldPath} points to the list ${listKey} which does not exist`
+    );
+  }
+  if (field.field) {
+    const localRef = `${listKey}.${fieldPath}`;
+    const foreignRef = `${field.list}.${field.field}`;
+    if (alreadyResolvedTwoSidedRelationships.has(localRef)) {
+      return;
+    }
+    alreadyResolvedTwoSidedRelationships.add(foreignRef);
+    const foreignField = foreignUnresolvedList.fields[field.field]?.dbField;
+    if (!foreignField) {
+      throw new Error(
+        `The relationship field at ${localRef} points to ${foreignRef} but no field at ${foreignRef} exists`
+      );
+    }
+
+    if (foreignField.kind !== 'relation') {
+      throw new Error(
+        `The relationship field at ${localRef} points to ${foreignRef} but ${foreignRef} is not a relationship field`
+      );
+    }
+
+    if (foreignField.list !== listKey) {
+      throw new Error(
+        `The relationship field at ${localRef} points to ${foreignRef} but ${foreignRef} points to the list ${foreignField.list} rather than ${listKey}`
+      );
+    }
+
+    if (foreignField.field === undefined) {
+      throw new Error(
+        `The relationship field at ${localRef} points to ${foreignRef}, ${localRef} points to ${listKey} correctly but does not point to the ${fieldPath} field when it should`
+      );
+    }
+
+    if (foreignField.field !== fieldPath) {
+      throw new Error(
+        `The relationship field at ${localRef} points to ${foreignRef}, ${localRef} points to ${listKey} correctly but points to the ${foreignField.field} field instead of ${fieldPath}`
+      );
+    }
+
+    let [leftRel, rightRel] = sortRelationships(
+      { listKey, fieldPath, mode: field.mode },
+      { listKey: field.list, fieldPath: field.field, mode: foreignField.mode }
+    );
+
+    if (leftRel.mode === 'one' && rightRel.mode === 'one') {
+      const relationName = `${leftRel.listKey}_${leftRel.fieldPath}`;
+      resolvedLists[leftRel.listKey][leftRel.fieldPath] = {
+        kind: 'relation',
+        mode: 'one',
+        field: rightRel.fieldPath,
+        list: rightRel.listKey,
+        foreignIdField: 'owned-unique',
+        relationName,
+      };
+      resolvedLists[rightRel.listKey][rightRel.fieldPath] = {
+        kind: 'relation',
+        mode: 'one',
+        field: leftRel.fieldPath,
+        list: leftRel.listKey,
+        foreignIdField: 'none',
+        relationName,
+      };
+      return;
+    }
+    if (leftRel.mode === 'many' && rightRel.mode === 'many') {
+      const relationName = `${leftRel.listKey}_${leftRel.fieldPath}_${rightRel.listKey}_${rightRel.fieldPath}`;
+      resolvedLists[leftRel.listKey][leftRel.fieldPath] = {
+        kind: 'relation',
+        mode: 'many',
+        field: rightRel.fieldPath,
+        list: rightRel.listKey,
+        relationName,
+      };
+      resolvedLists[rightRel.listKey][rightRel.fieldPath] = {
+        kind: 'relation',
+        mode: 'many',
+        field: leftRel.fieldPath,
+        list: leftRel.listKey,
+        relationName,
+      };
+      return;
+    }
+    // if we're here, we're in a 1:N
+    // and we want to make sure the 1 side on the left and the many on the right
+    // (technically only one of these checks is necessary, the other one will have to be true if one is
+    // but this communicates what's going on here)
+    if (leftRel.mode === 'many' && rightRel.mode === 'one') {
+      [leftRel, rightRel] = [rightRel, leftRel];
+    }
+    const relationName = `${leftRel.listKey}_${leftRel.fieldPath}`;
+    resolvedLists[leftRel.listKey][leftRel.fieldPath] = {
+      kind: 'relation',
+      mode: 'one',
+      field: rightRel.fieldPath,
+      list: rightRel.listKey,
+      foreignIdField: 'owned',
+      relationName,
+    };
+    resolvedLists[rightRel.listKey][rightRel.fieldPath] = {
+      kind: 'relation',
+      mode: 'many',
+      field: leftRel.fieldPath,
+      list: leftRel.listKey,
+      relationName,
+    };
+    return;
+  }
+  const foreignFieldPath = `from_${listKey}_${fieldPath}`;
+  if (foreignUnresolvedList.fields[foreignFieldPath]) {
+    throw new Error(
+      `The relationship field at ${listKey}.${fieldPath} points to the list ${field.list}, Keystone needs to a create a relationship field at ${field.list}.${foreignFieldPath} to support the relationship at ${listKey}.${fieldPath} but ${field.list} already has a field named ${foreignFieldPath}`
+    );
+  }
+
+  if (field.mode === 'many') {
+    const relationName = `${listKey}_${fieldPath}_many`;
+    resolvedLists[field.list][foreignFieldPath] = {
+      kind: 'relation',
+      mode: 'many',
+      list: listKey,
+      field: fieldPath,
+      relationName,
+    };
+    resolvedList[fieldPath] = {
+      kind: 'relation',
+      mode: 'many',
+      list: field.list,
+      field: foreignFieldPath,
+      relationName,
+    };
+  } else {
+    const relationName = `${listKey}_${fieldPath}`;
+    resolvedLists[field.list][foreignFieldPath] = {
+      kind: 'relation',
+      mode: 'many',
+      list: listKey,
+      field: fieldPath,
+      relationName,
+    };
+    resolvedList[fieldPath] = {
+      kind: 'relation',
+      list: field.list,
+      field: foreignFieldPath,
+      foreignIdField: 'owned',
+      relationName,
+      mode: 'one',
+    };
+  }
 }

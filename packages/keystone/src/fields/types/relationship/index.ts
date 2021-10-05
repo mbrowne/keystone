@@ -4,6 +4,10 @@ import {
   CommonFieldConfig,
   fieldType,
   AdminMetaRootVal,
+  TypesForList,
+  MultiDBField,
+  RealDBField,
+  PolymorphicRelationDBField,
 } from '../../../types';
 import { graphql } from '../../..';
 import { resolveView } from '../../resolve-view';
@@ -51,13 +55,264 @@ type CountDisplayConfig = {
 export type RelationshipFieldConfig<TGeneratedListTypes extends BaseGeneratedListTypes> =
   CommonFieldConfig<TGeneratedListTypes> & {
     many?: boolean;
-    ref: string;
+    ref: string | string[];
     ui?: {
       hideCreate?: boolean;
     };
   } & (SelectDisplayConfig | CardsDisplayConfig | CountDisplayConfig);
 
-export const relationship =
+export const relationship = <TGeneratedListTypes extends BaseGeneratedListTypes>({
+  many = false,
+  ref,
+  ...config
+}: RelationshipFieldConfig<TGeneratedListTypes>): FieldTypeFunc => {
+  // temp
+  if (!Array.isArray(ref)) {
+    return relationship_orig({ many, ref, ...config });
+  }
+
+  return meta => {
+    if (!Array.isArray(ref)) {
+      ref = [ref];
+    }
+    const foreignKeys = ref.map(target => {
+      const [listKey, fieldKey] = target.split('.');
+      return {
+        listKey,
+        fieldKey,
+      };
+    });
+
+    //temp
+    // console.log('foreignKeys', foreignKeys);
+
+    // const commonConfig = {
+    //   ...config,
+    //   views: resolveView('relationship/views'),
+    //   getAdminMeta: (
+    //     adminMetaRoot: AdminMetaRootVal
+    //   ): Parameters<typeof import('./views').controller>[0]['fieldMeta'] => {
+    //     if (!meta.lists[foreignListKey]) {
+    //       throw new Error(
+    //         `The ref [${ref}] on relationship [${meta.listKey}.${meta.fieldKey}] is invalid`
+    //       );
+    //     }
+    //     if (config.ui?.displayMode === 'cards') {
+    //       // we're checking whether the field which will be in the admin meta at the time that getAdminMeta is called.
+    //       // in newer versions of keystone, it will be there and it will not be there for older versions of keystone.
+    //       // this is so that relationship fields doesn't break in confusing ways
+    //       // if people are using a slightly older version of keystone
+    //       const currentField = adminMetaRoot.listsByKey[meta.listKey].fields.find(
+    //         x => x.path === meta.fieldKey
+    //       );
+    //       if (currentField) {
+    //         const allForeignFields = new Set(
+    //           adminMetaRoot.listsByKey[foreignListKey].fields.map(x => x.path)
+    //         );
+    //         for (const [configOption, foreignFields] of [
+    //           ['ui.cardFields', config.ui.cardFields],
+    //           ['ui.inlineCreate.fields', config.ui.inlineCreate?.fields ?? []],
+    //           ['ui.inlineEdit.fields', config.ui.inlineEdit?.fields ?? []],
+    //         ] as const) {
+    //           for (const foreignField of foreignFields) {
+    //             if (!allForeignFields.has(foreignField)) {
+    //               throw new Error(
+    //                 `The ${configOption} option on the relationship field at ${meta.listKey}.${meta.fieldKey} includes the "${foreignField}" field but that field does not exist on the "${foreignListKey}" list`
+    //               );
+    //             }
+    //           }
+    //         }
+    //       }
+    //     }
+    //     return {
+    //       refListKey: foreignListKey,
+    //       many,
+    //       hideCreate: config.ui?.hideCreate ?? false,
+    //       ...(config.ui?.displayMode === 'cards'
+    //         ? {
+    //             displayMode: 'cards',
+    //             cardFields: config.ui.cardFields,
+    //             linkToItem: config.ui.linkToItem ?? false,
+    //             removeMode: config.ui.removeMode ?? 'disconnect',
+    //             inlineCreate: config.ui.inlineCreate ?? null,
+    //             inlineEdit: config.ui.inlineEdit ?? null,
+    //             inlineConnect: config.ui.inlineConnect ?? false,
+    //             refLabelField: adminMetaRoot.listsByKey[foreignListKey].labelField,
+    //           }
+    //         : config.ui?.displayMode === 'count'
+    //         ? { displayMode: 'count' }
+    //         : {
+    //             displayMode: 'select',
+    //             refLabelField: adminMetaRoot.listsByKey[foreignListKey].labelField,
+    //           }),
+    //     };
+    //   },
+    // };
+    // if (!meta.lists[foreignListKey]) {
+    //   throw new Error(
+    //     `Unable to resolve related list '${foreignListKey}' from ${meta.listKey}.${meta.fieldKey}`
+    //   );
+    // }
+    // const listTypes = meta.lists[foreignListKey].types;
+
+    const foreignListKeys = foreignKeys.map(({ listKey }) => listKey);
+
+    const commonConfig = {
+      ...config,
+      getAdminMeta: (
+        adminMetaRoot: AdminMetaRootVal
+      ): Parameters<typeof import('./views').controller>[0]['fieldMeta'] => {
+        return {
+          refListKeys: foreignListKeys,
+          // TODO remaining properties
+        };
+      },
+    };
+
+    // TEMP
+    const listKey = 'HeroComponent';
+    const fieldKey = 'id';
+
+    // TODO
+    const listTypes: TypesForList = {
+      output: graphql.interface()({
+        name: 'Chunk',
+        fields: {
+          internalName: graphql.field({
+            type: graphql.String,
+            // TODO
+            resolve() {
+              return null;
+            },
+          }),
+        },
+      }),
+    };
+
+    const tmp = fieldType<PolymorphicRelationDBField>({
+      kind: 'polymorphicRelation',
+      fields: {
+        [fieldKey]: {
+          kind: 'relation',
+          mode: 'many',
+          list: listKey,
+          field: fieldKey,
+        },
+        // [fieldKey]: {
+        //   kind: 'scalar',
+        //   scalar: 'String',
+        //   mode: 'optional', // ??
+        //   listKey,
+        // },
+      },
+    })({
+      ...commonConfig,
+      views: resolveView('relationship/views'),
+      output: graphql.field({
+        args: listTypes.findManyArgs,
+        type: graphql.list(graphql.nonNull(listTypes.output)),
+        resolve({ value }, args) {
+          return null;
+
+          // TODO
+          // return value.findMany(args);
+        },
+      }),
+    });
+
+    return tmp;
+
+    /*
+    if (many) {
+      return fieldType({
+        kind: 'relation',
+        mode: 'many',
+        list: foreignListKey,
+        field: foreignFieldKey,
+      })({
+        ...commonConfig,
+        input: {
+          where: {
+            arg: graphql.arg({ type: listTypes.relateTo.many.where }),
+            resolve(value, context, resolve) {
+              return resolve(value);
+            },
+          },
+          create: listTypes.relateTo.many.create && {
+            arg: graphql.arg({ type: listTypes.relateTo.many.create }),
+            async resolve(value, context, resolve) {
+              return resolve(value);
+            },
+          },
+          update: listTypes.relateTo.many.update && {
+            arg: graphql.arg({ type: listTypes.relateTo.many.update }),
+            async resolve(value, context, resolve) {
+              return resolve(value);
+            },
+          },
+        },
+        output: graphql.field({
+          args: listTypes.findManyArgs,
+          type: graphql.list(graphql.nonNull(listTypes.output)),
+          resolve({ value }, args) {
+            return value.findMany(args);
+          },
+        }),
+        extraOutputFields: {
+          [`${meta.fieldKey}Count`]: graphql.field({
+            type: graphql.Int,
+            args: {
+              where: graphql.arg({ type: graphql.nonNull(listTypes.where), defaultValue: {} }),
+            },
+            resolve({ value }, args) {
+              return value.count({
+                where: args.where,
+              });
+            },
+          }),
+        },
+      });
+    }
+    return fieldType({
+      kind: 'relation',
+      mode: 'one',
+      list: foreignListKey,
+      field: foreignFieldKey,
+    })({
+      ...commonConfig,
+      input: {
+        where: {
+          arg: graphql.arg({ type: listTypes.where }),
+          resolve(value, context, resolve) {
+            return resolve(value);
+          },
+        },
+        create: listTypes.relateTo.one.create && {
+          arg: graphql.arg({ type: listTypes.relateTo.one.create }),
+          async resolve(value, context, resolve) {
+            return resolve(value);
+          },
+        },
+
+        update: listTypes.relateTo.one.update && {
+          arg: graphql.arg({ type: listTypes.relateTo.one.update }),
+          async resolve(value, context, resolve) {
+            return resolve(value);
+          },
+        },
+      },
+      output: graphql.field({
+        type: listTypes.output,
+        resolve({ value }) {
+          return value();
+        },
+      }),
+    });
+    */
+  };
+};
+
+const relationship_orig =
   <TGeneratedListTypes extends BaseGeneratedListTypes>({
     many = false,
     ref,
@@ -134,6 +389,9 @@ export const relationship =
     }
     const listTypes = meta.lists[foreignListKey].types;
     if (many) {
+      //temp
+      // console.log('foreignListKey, foreignFieldKey', foreignListKey, foreignFieldKey);
+
       return fieldType({
         kind: 'relation',
         mode: 'many',

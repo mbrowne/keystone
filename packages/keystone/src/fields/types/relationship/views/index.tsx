@@ -369,6 +369,9 @@ type RelationshipController = FieldController<
 export const controller = (
   config: FieldControllerConfig<
     {
+      // mhb
+      // TODO
+      // switch to refListKeys: string[]
       refListKey: string;
       many: boolean;
       hideCreate: boolean;

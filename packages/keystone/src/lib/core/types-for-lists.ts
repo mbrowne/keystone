@@ -419,20 +419,22 @@ export function initialiseLists(
       let hasAnEnabledCreateField = false;
       let hasAnEnabledUpdateField = false;
       const fields = Object.fromEntries(
-        Object.entries(list.fields).map(([fieldKey, field]) => {
-          if (field.input?.create?.arg && field.graphql.isEnabled.create) {
-            hasAnEnabledCreateField = true;
-          }
-          if (field.input?.update && field.graphql.isEnabled.update) {
-            hasAnEnabledUpdateField = true;
-          }
-          const access = parseFieldAccessControl(field.access);
-          const dbField = listsWithResolvedDBFields[listKey].resolvedDbFields[fieldKey];
-          return [
-            fieldKey,
-            { ...field, access, dbField, hooks: field.hooks ?? {}, graphql: field.graphql },
-          ];
-        })
+        Object.entries(list.fields)
+          .map(([fieldKey, field]) => {
+            if (field.input?.create?.arg && field.graphql.isEnabled.create) {
+              hasAnEnabledCreateField = true;
+            }
+            if (field.input?.update && field.graphql.isEnabled.update) {
+              hasAnEnabledUpdateField = true;
+            }
+            const access = parseFieldAccessControl(field.access);
+            const dbField = listsWithResolvedDBFields[listKey].resolvedDbFields[fieldKey];
+            return [
+              fieldKey,
+              { ...field, access, dbField, hooks: field.hooks ?? {}, graphql: field.graphql },
+            ];
+          })
+          .filter(Boolean)
       );
       const access = parseListAccessControl(list.access);
       // You can't have a graphQL type with no fields, so

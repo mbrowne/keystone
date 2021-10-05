@@ -122,6 +122,13 @@ export type RelationDBField<Mode extends 'many' | 'one'> = {
   mode: Mode;
 };
 
+// Polymorphic relations are relations from a source type to multiple
+// possible destination types
+export type PolymorphicRelationDBField<TRelationship extends 'many' | 'one' = 'many' | 'one'> = {
+  kind: 'polymorphicRelation';
+  fields: Record<string, RelationDBField<TRelationship>>;
+};
+
 export type EnumDBField<Value extends string, Mode extends 'required' | 'many' | 'optional'> = {
   kind: 'enum';
   name: string;
@@ -137,14 +144,17 @@ export type ScalarishDBField =
   | ScalarDBField<keyof ScalarPrismaTypes, 'required' | 'many' | 'optional'>
   | EnumDBField<string, 'required' | 'many' | 'optional'>;
 
-export type RealDBField = ScalarishDBField | RelationDBField<'many' | 'one'>;
+export type RealDBField =
+  | ScalarishDBField
+  | RelationDBField<'many' | 'one'>
+  | PolymorphicRelationDBField;
 
-export type MultiDBField<Fields extends Record<string, ScalarishDBField>> = {
+export type MultiDBField<Fields extends Record<string, RealDBField>> = {
   kind: 'multi';
   fields: Fields;
 };
 
-export type DBField = RealDBField | NoDBField | MultiDBField<Record<string, ScalarishDBField>>;
+export type DBField = RealDBField | NoDBField;
 
 // TODO: this isn't right for create
 // for create though, db level defaults need to be taken into account for when to not allow undefined
@@ -157,7 +167,7 @@ type DBFieldToInputValue<TDBField extends DBField> = TDBField extends ScalarDBFi
       required: ScalarPrismaTypes[Scalar] | undefined;
       many: ScalarPrismaTypes[Scalar][] | undefined;
     }[Mode]
-  : TDBField extends RelationDBField<'many' | 'one'>
+  : TDBField extends RelationDBField<'many' | 'one'> | PolymorphicRelationDBField
   ? { connect?: {}; disconnect?: boolean } | undefined
   : TDBField extends EnumDBField<infer Value, infer Mode>
   ? {
@@ -381,7 +391,7 @@ export type TypesForList = {
   uniqueWhere: AnyInputObj;
   where: AnyInputObj;
   orderBy: AnyInputObj;
-  output: graphql.ObjectType<ItemRootValue>;
+  output: graphql.ObjectType<ItemRootValue> | graphql.InterfaceType<ItemRootValue, any>;
   findManyArgs: FindManyArgs;
   relateTo: {
     many: {

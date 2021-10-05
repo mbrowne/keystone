@@ -1,4 +1,11 @@
-import { ScalarDBField, ScalarDBFieldDefault, DatabaseProvider } from '../../types';
+import {
+  ScalarDBField,
+  ScalarDBFieldDefault,
+  DatabaseProvider,
+  PolymorphicRelationDBField,
+  RelationDBField,
+} from '../../types';
+import { upcase, lowcase } from '../utils';
 import { ResolvedDBField, ListsWithResolvedRelations } from './resolve-relationships';
 import { getDBFieldKeyForFieldOnMultiField } from './utils';
 
@@ -215,9 +222,27 @@ generator client {
   engineType = "binary"
 }
 \n`;
+
+  // these will be used to create Prisma models that will be mapped to join tables
+  // in the database
+  const polymorphicRelationFields: {
+    [joinModelName: string]: {
+      listKey: string;
+      fieldPath: string;
+    };
+  } = {};
+
   for (const [listKey, { resolvedDbFields }] of Object.entries(lists)) {
     prismaSchema += `model ${listKey} {`;
     for (const [fieldPath, field] of Object.entries(resolvedDbFields)) {
+      if (field.kind === 'polymorphicRelation') {
+        const joinModelName = listKey + upcase(fieldPath);
+        polymorphicRelationFields[joinModelName] = {
+          listKey,
+          fieldPath,
+        };
+        continue;
+      }
       if (field.kind !== 'none') {
         prismaSchema += '\n' + printField(fieldPath, field, provider, lists);
       }
@@ -228,6 +253,22 @@ generator client {
     }
     prismaSchema += `\n}\n`;
   }
+
+  for (const [modelName, { listKey, fieldPath }] of Object.entries(polymorphicRelationFields)) {
+    const sourceIdField = lowcase(listKey) + 'Id';
+    const targetTypeField = fieldPath + 'Type';
+    const targetIdField = fieldPath + 'Id';
+
+    prismaSchema += `model ${modelName} {`;
+    prismaSchema += `\n${sourceIdField} String`;
+    prismaSchema += `\n${targetTypeField} String`;
+    prismaSchema += `\n${targetIdField} String`;
+    prismaSchema += `\norder Int`;
+    prismaSchema += `\n@@index([order])`;
+    prismaSchema += `\n@@unique([${sourceIdField}, ${targetTypeField}, ${targetIdField}])`;
+    prismaSchema += `\n}\n`;
+  }
+
   prismaSchema += `\n${collectEnums(lists)}\n`;
 
   return prismaSchema;

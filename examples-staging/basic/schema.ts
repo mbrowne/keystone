@@ -129,6 +129,20 @@ export const lists = {
       value: text({}),
     },
   }),
+  HeroComponent: list({
+    fields: {
+      heading: text(),
+      image: image(),
+      linkUrl: text(),
+    },
+  }),
+  BlockComponent: list({
+    fields: {
+      heading: text(),
+      image: image(),
+      content: document(),
+    },
+  }),
   Post: list({
     fields: {
       title: text(),
@@ -149,35 +163,40 @@ export const lists = {
         },
         defaultValue: 'draft',
       }),
-      content: document({
-        ui: { views: require.resolve('./admin/fieldViews/Content.tsx') },
-        relationships: {
-          mention: {
-            kind: 'inline',
-            label: 'Mention',
-            listKey: 'User',
-          },
-          featuredAuthors: {
-            kind: 'prop',
-            listKey: 'User',
-            many: true,
-            selection: `posts(take: 10) {
-            title
-          }`,
-          },
-        },
-        formatting: true,
-        layouts: [
-          [1, 1],
-          [1, 1, 1],
-          [2, 1],
-          [1, 2],
-          [1, 2, 1],
-        ],
-        links: true,
-        dividers: true,
-        componentBlocks,
+      content: relationship({
+        ref: ['HeroComponent', 'BlockComponent'],
+        many: true,
       }),
+
+      // content: document({
+      //   ui: { views: require.resolve('./admin/fieldViews/Content.tsx') },
+      //   relationships: {
+      //     mention: {
+      //       kind: 'inline',
+      //       label: 'Mention',
+      //       listKey: 'User',
+      //     },
+      //     featuredAuthors: {
+      //       kind: 'prop',
+      //       listKey: 'User',
+      //       many: true,
+      //       selection: `posts(take: 10) {
+      //       title
+      //     }`,
+      //     },
+      //   },
+      //   formatting: true,
+      //   layouts: [
+      //     [1, 1],
+      //     [1, 1, 1],
+      //     [2, 1],
+      //     [1, 2],
+      //     [1, 2, 1],
+      //   ],
+      //   links: true,
+      //   dividers: true,
+      //   componentBlocks,
+      // }),
       publishDate: timestamp(),
       author: relationship({
         ref: 'User.posts',
