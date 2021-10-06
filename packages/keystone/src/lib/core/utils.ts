@@ -1,4 +1,5 @@
 import pluralize from 'pluralize';
+import { Sql } from '@prisma/client/runtime';
 import { ItemRootValue, KeystoneConfig, KeystoneContext } from '../../types';
 import { humanize } from '../utils';
 import { prismaError } from './graphql-errors';
@@ -70,6 +71,8 @@ export type PrismaClient = {
   $disconnect(): Promise<void>;
   $connect(): Promise<void>;
   $transaction<T extends PrismaPromise<any>[]>(promises: [...T]): UnwrapPromises<T>;
+  $queryRaw<T = unknown>(query: TemplateStringsArray | Sql, ...values: any[]): PrismaPromise<T>;
+  $executeRaw(query: TemplateStringsArray | Sql, ...values: any[]): PrismaPromise<number>;
 } & Record<string, PrismaModel>;
 
 // Run prisma operations as part of a resolver
@@ -81,6 +84,18 @@ export async function runWithPrisma<T>(
   const model = context.prisma[listKey[0].toLowerCase() + listKey.slice(1)];
   try {
     return await fn(model);
+  } catch (err: any) {
+    throw prismaError(err);
+  }
+}
+
+// Run custom prisma operations (e.g. $queryRaw()) as part of a resolver
+export async function customOperationWithPrisma<T>(
+  context: KeystoneContext,
+  fn: (prismaClient: PrismaClient) => Promise<T>
+) {
+  try {
+    return await fn(context.prisma as PrismaClient);
   } catch (err: any) {
     throw prismaError(err);
   }

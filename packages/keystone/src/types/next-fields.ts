@@ -124,9 +124,12 @@ export type RelationDBField<Mode extends 'many' | 'one'> = {
 
 // Polymorphic relations are relations from a source type to multiple
 // possible destination types
-export type PolymorphicRelationDBField<TRelationship extends 'many' | 'one' = 'many' | 'one'> = {
+export type PolymorphicRelationDBField<Mode extends 'many' | 'one' = 'many' | 'one'> = {
   kind: 'polymorphicRelation';
-  fields: Record<string, RelationDBField<TRelationship>>;
+  mode: Mode;
+  // name of the prisma model that will be mapped to a join table in the DB
+  joinModelName: string;
+  fields: Record<string, RelationDBField<Mode>>;
 };
 
 export type EnumDBField<Value extends string, Mode extends 'required' | 'many' | 'optional'> = {
@@ -203,7 +206,7 @@ type DBFieldToOutputValue<TDBField extends DBField> = TDBField extends ScalarDBF
       required: ScalarPrismaTypes[Scalar];
       many: ScalarPrismaTypes[Scalar][];
     }[Mode]
-  : TDBField extends RelationDBField<infer Mode>
+  : TDBField extends RelationDBField<infer Mode> | PolymorphicRelationDBField<infer Mode>
   ? {
       one: () => Promise<ItemRootValue>;
       many: {

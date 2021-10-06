@@ -11,6 +11,7 @@ import {
 } from '../../../types';
 import { graphql } from '../../..';
 import { resolveView } from '../../resolve-view';
+import { upcase } from '../../../lib/utils';
 
 // This is the default display mode for Relationships
 type SelectDisplayConfig = {
@@ -52,6 +53,15 @@ type CountDisplayConfig = {
   };
 };
 
+// these are settings that are only relevant for polymorphic relationships
+type PolymorphicRelationshipAdditionalProps = {
+  interface: {
+    name: string;
+    fields: any; // TODO
+    labelField: any; // TODO
+  };
+};
+
 export type RelationshipFieldConfig<TGeneratedListTypes extends BaseGeneratedListTypes> =
   CommonFieldConfig<TGeneratedListTypes> & {
     many?: boolean;
@@ -59,7 +69,8 @@ export type RelationshipFieldConfig<TGeneratedListTypes extends BaseGeneratedLis
     ui?: {
       hideCreate?: boolean;
     };
-  } & (SelectDisplayConfig | CardsDisplayConfig | CountDisplayConfig);
+  } & (SelectDisplayConfig | CardsDisplayConfig | CountDisplayConfig) &
+    Partial<PolymorphicRelationshipAdditionalProps>;
 
 export const relationship = <TGeneratedListTypes extends BaseGeneratedListTypes>({
   many = false,
@@ -164,39 +175,51 @@ export const relationship = <TGeneratedListTypes extends BaseGeneratedListTypes>
       ): Parameters<typeof import('./views').controller>[0]['fieldMeta'] => {
         return {
           refListKeys: foreignListKeys,
+          refLabelField: config.interface.labelField,
           // TODO remaining properties
         };
       },
     };
 
     // TEMP
-    const listKey = 'HeroComponent';
-    const fieldKey = 'id';
+    const foreignListKey = 'HeroComponent';
+    const foreignFieldKey = undefined;
+    // const foreignFieldKey = 'post';
 
     // TODO
     const listTypes: TypesForList = {
       output: graphql.interface()({
         name: 'Chunk',
         fields: {
-          internalName: graphql.field({
-            type: graphql.String,
+          id: graphql.field({
+            type: graphql.nonNull(graphql.ID),
+            // TODO
+            resolve() {
+              return null;
+            },
+          }),
+          chunkName: graphql.field({
+            type: graphql.nonNull(graphql.String),
             // TODO
             resolve() {
               return null;
             },
           }),
         },
+        resolveType: item => item.__typename,
       }),
     };
 
-    const tmp = fieldType<PolymorphicRelationDBField>({
+    const tmp = fieldType({
       kind: 'polymorphicRelation',
+      mode: 'many',
+      joinModelName: meta.listKey + upcase(meta.fieldKey),
       fields: {
-        [fieldKey]: {
+        [foreignListKey]: {
           kind: 'relation',
           mode: 'many',
-          list: listKey,
-          field: fieldKey,
+          list: foreignListKey,
+          field: foreignFieldKey,
         },
         // [fieldKey]: {
         //   kind: 'scalar',
@@ -212,10 +235,8 @@ export const relationship = <TGeneratedListTypes extends BaseGeneratedListTypes>
         args: listTypes.findManyArgs,
         type: graphql.list(graphql.nonNull(listTypes.output)),
         resolve({ value }, args) {
-          return null;
-
-          // TODO
-          // return value.findMany(args);
+          // return [];
+          return value.findMany(args);
         },
       }),
     });
@@ -319,7 +340,7 @@ const relationship_orig =
     ...config
   }: RelationshipFieldConfig<TGeneratedListTypes>): FieldTypeFunc =>
   meta => {
-    const [foreignListKey, foreignFieldKey] = ref.split('.');
+    const [foreignListKey, foreignFieldKey] = (ref as string).split('.');
     const commonConfig = {
       ...config,
       views: resolveView('relationship/views'),

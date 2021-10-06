@@ -48,6 +48,7 @@ export type InitialisedList = {
   /** This will include the opposites to one-sided relationships */
   resolvedDbFields: Record<string, ResolvedDBField>;
   pluralGraphQLName: string;
+  implementsGraphQLInterfaces: Set<string>;
   types: TypesForList;
   access: ResolvedListAccessControl;
   hooks: ListHooks<BaseGeneratedListTypes>;
@@ -179,6 +180,30 @@ export function initialiseLists(
         };
       },
     });
+
+    const FooInterface = graphql.interface()({
+      name: 'Foo',
+      fields: {
+        x: graphql.field({
+          type: graphql.String,
+        }),
+      },
+    });
+    const tmp = graphql.object()({
+      name: 'MyObj',
+      fields: {
+        x: graphql.field({
+          type: graphql.String,
+          resolve() {
+            return null;
+          },
+        }),
+      },
+      interfaces: [FooInterface],
+    });
+    console.log('tmp', tmp);
+
+    // output.graphQLType.astNode?.interfaces = graphql.
 
     const uniqueWhere = graphql.inputObject({
       name: names.whereUniqueInputName,
@@ -408,6 +433,7 @@ export function initialiseLists(
         ...getNamesFromList(listKey, list),
         hooks: list.hooks,
         access: list.access,
+        implementsGraphQLInterfaces: new Set(),
       },
     ])
   );

@@ -107,6 +107,13 @@ export const Field = ({
   onChange,
   forceValidation,
 }: FieldProps<typeof controller>) => {
+  //temp
+  if (field.path === 'content') {
+    console.log('value', value);
+
+    return <div />;
+  }
+
   const keystone = useKeystone();
   const foreignList = useList(field.refListKey);
   const localList = useList(field.listKey);
@@ -394,6 +401,9 @@ export const controller = (
     )
   >
 ): RelationshipController => {
+  //temp
+  console.log('config.path', config.path);
+
   return {
     many: config.fieldMeta.many,
     listKey: config.listKey,

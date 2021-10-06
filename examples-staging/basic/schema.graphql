@@ -425,7 +425,8 @@ type Post {
 }
 
 interface Chunk {
-  internalName: String
+  id: ID!
+  chunkName: String!
 }
 
 scalar DateTime

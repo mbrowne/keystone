@@ -134,6 +134,9 @@ export const lists = {
       heading: text(),
       image: image(),
       linkUrl: text(),
+
+      //temp
+      // foo: relationship({ ref: 'Post.content' }),
     },
   }),
   BlockComponent: list({
@@ -165,6 +168,13 @@ export const lists = {
       }),
       content: relationship({
         ref: ['HeroComponent', 'BlockComponent'],
+        interface: {
+          name: 'Chunk',
+          fields: {
+            chunkName: { validation: { isRequired: true } },
+          },
+          labelField: 'chunkName',
+        },
         many: true,
       }),
 
