@@ -11,6 +11,7 @@ import {
 } from '../../../types';
 import { graphql } from '../../..';
 import { resolveView } from '../../resolve-view';
+import { upcase } from '../../../lib/utils';
 
 // This is the default display mode for Relationships
 type SelectDisplayConfig = {
@@ -52,6 +53,15 @@ type CountDisplayConfig = {
   };
 };
 
+// these are settings that are only relevant for polymorphic relationships
+type PolymorphicRelationshipAdditionalProps = {
+  interface: {
+    name: string;
+    fields: any; // TODO
+    labelField: any; // TODO
+  };
+};
+
 export type RelationshipFieldConfig<TGeneratedListTypes extends BaseGeneratedListTypes> =
   CommonFieldConfig<TGeneratedListTypes> & {
     many?: boolean;
@@ -59,7 +69,8 @@ export type RelationshipFieldConfig<TGeneratedListTypes extends BaseGeneratedLis
     ui?: {
       hideCreate?: boolean;
     };
-  } & (SelectDisplayConfig | CardsDisplayConfig | CountDisplayConfig);
+  } & (SelectDisplayConfig | CardsDisplayConfig | CountDisplayConfig) &
+    Partial<PolymorphicRelationshipAdditionalProps>;
 
 export const relationship = <TGeneratedListTypes extends BaseGeneratedListTypes>({
   many = false,
@@ -164,58 +175,154 @@ export const relationship = <TGeneratedListTypes extends BaseGeneratedListTypes>
       ): Parameters<typeof import('./views').controller>[0]['fieldMeta'] => {
         return {
           refListKeys: foreignListKeys,
+          refLabelField: config.interface.labelField,
           // TODO remaining properties
         };
       },
     };
 
     // TEMP
-    const listKey = 'HeroComponent';
-    const fieldKey = 'id';
+    const foreignListKey = 'HeroComponent';
+    const foreignFieldKey = undefined;
+    // const foreignFieldKey = 'post';
+
+    const foreignFields = {
+      [foreignListKey]: {
+        kind: 'relation',
+        mode: 'many',
+        list: foreignListKey,
+        field: foreignFieldKey,
+      },
+      BlockComponent: {
+        kind: 'relation',
+        mode: 'many',
+        list: 'BlockComponent',
+      },
+      // [fieldKey]: {
+      //   kind: 'scalar',
+      //   scalar: 'String',
+      //   mode: 'optional', // ??
+      //   listKey,
+      // },
+    };
+
+    const joinModelName = meta.listKey + upcase(meta.fieldKey);
+    const relationTypeName = joinModelName;
+
+    const where: TypesForList['where'] = graphql.inputObject({
+      // TODO we might want to use getGqlNames() for all the graphql names
+      // including this one
+      name: relationTypeName + 'WhereInput',
+
+      fields: () => {
+        // Get the 'where' type for the ID field of related items.
+        // Since all related lists should have the same ID field type, we can just
+        // grab the first one.
+        const firstForeignField = Object.values(foreignFields)[0];
+        // const foreignListConfig = meta.lists[firstForeignField.list].listConfig;
+        // console.log('foreignListConfig.fields.id', foreignListConfig.fields.id);
+        const foreignList = meta.lists[firstForeignField.list];
+        // console.log('meta.lists[firstForeignField.list]', meta.lists[firstForeignField.list]);
+        // const idField = meta.lists[firstForeignField.list].fields.id
+
+        if (!foreignList.initialisedList) {
+          throw Error(
+            `Expected initialized list for '${firstForeignField.list}', but it wasn't initialized yet`
+          );
+        }
+        const idField = foreignList.initialisedList.fields.id;
+
+        return Object.assign(
+          {
+            AND: graphql.arg({ type: graphql.list(graphql.nonNull(where)) }),
+            OR: graphql.arg({ type: graphql.list(graphql.nonNull(where)) }),
+            NOT: graphql.arg({ type: graphql.list(graphql.nonNull(where)) }),
+          },
+          {
+            // just support ID filtering for now
+            id: idField.input?.where?.arg,
+          }
+        );
+      },
+    });
+
+    //TODO
+    let relateToManyForCreate, relateToManyForUpdate, relateToOneForCreate, relateToOneForUpdate;
 
     // TODO
     const listTypes: TypesForList = {
       output: graphql.interface()({
         name: 'Chunk',
         fields: {
-          internalName: graphql.field({
+          id: graphql.field({
+            type: graphql.nonNull(graphql.ID),
+            // TODO
+            resolve() {
+              return null;
+            },
+          }),
+          chunkName: graphql.field({
             type: graphql.String,
+            // type: graphql.nonNull(graphql.String),
             // TODO
             resolve() {
               return null;
             },
           }),
         },
+        resolveType: item => item.__typename,
       }),
+      relateTo: {
+        many: {
+          where: graphql.inputObject({
+            name: `${relationTypeName}ManyRelationFilter`,
+            fields: {
+              every: graphql.arg({ type: where }),
+              some: graphql.arg({ type: where }),
+              none: graphql.arg({ type: where }),
+            },
+          }),
+          create: relateToManyForCreate,
+          update: relateToManyForUpdate,
+        },
+        one: { create: relateToOneForCreate, update: relateToOneForUpdate },
+      },
     };
 
-    const tmp = fieldType<PolymorphicRelationDBField>({
+    const tmp = fieldType({
       kind: 'polymorphicRelation',
-      fields: {
-        [fieldKey]: {
-          kind: 'relation',
-          mode: 'many',
-          list: listKey,
-          field: fieldKey,
-        },
-        // [fieldKey]: {
-        //   kind: 'scalar',
-        //   scalar: 'String',
-        //   mode: 'optional', // ??
-        //   listKey,
-        // },
-      },
+      mode: 'many',
+      joinModelName,
+      fields: foreignFields,
     })({
       ...commonConfig,
       views: resolveView('relationship/views'),
+      input: {
+        where: {
+          arg: graphql.arg({ type: listTypes.relateTo.many.where }),
+          resolve(value, context, resolve) {
+            return resolve(value);
+          },
+        },
+        create: listTypes.relateTo.many.create && {
+          arg: graphql.arg({ type: listTypes.relateTo.many.create }),
+          async resolve(value, context, resolve) {
+            return resolve(value);
+          },
+        },
+        update: listTypes.relateTo.many.update && {
+          arg: graphql.arg({ type: listTypes.relateTo.many.update }),
+          async resolve(value, context, resolve) {
+            return resolve(value);
+          },
+        },
+      },
       output: graphql.field({
         args: listTypes.findManyArgs,
         type: graphql.list(graphql.nonNull(listTypes.output)),
         resolve({ value }, args) {
-          return null;
-
-          // TODO
-          // return value.findMany(args);
+          // return [];
+          return value.findMany(args);
         },
       }),
     });
@@ -319,7 +426,7 @@ const relationship_orig =
     ...config
   }: RelationshipFieldConfig<TGeneratedListTypes>): FieldTypeFunc =>
   meta => {
-    const [foreignListKey, foreignFieldKey] = ref.split('.');
+    const [foreignListKey, foreignFieldKey] = (ref as string).split('.');
     const commonConfig = {
       ...config,
       views: resolveView('relationship/views'),

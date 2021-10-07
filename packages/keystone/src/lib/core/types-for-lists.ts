@@ -1,4 +1,5 @@
 import { CacheHint } from 'apollo-server-types';
+import { GraphQLObjectType, GraphQLObjectTypeConfig, GraphQLType } from 'graphql';
 import {
   ItemRootValue,
   TypesForList,
@@ -13,7 +14,7 @@ import {
   CacheHintArgs,
   MaybePromise,
 } from '../../types';
-import { graphql } from '../..';
+import { graphql, list } from '../..';
 import { FieldHooks } from '../../types/config/hooks';
 import { FilterOrderArgs } from '../../types/config/fields';
 import {
@@ -26,6 +27,10 @@ import { getNamesFromList } from './utils';
 import { ResolvedDBField, resolveRelationships } from './resolve-relationships';
 import { outputTypeField } from './queries/output-field';
 import { assertFieldsValid } from './field-assertions';
+import { config } from 'react-transition-group';
+import { InterfaceType } from '../../types/schema/graphql-ts-schema';
+import { blackBright } from 'chalk';
+import { RelationshipFieldConfig } from '../../fields';
 
 export type InitialisedField = Omit<NextFieldType, 'dbField' | 'access' | 'graphql'> & {
   dbField: ResolvedDBField;
@@ -48,6 +53,7 @@ export type InitialisedList = {
   /** This will include the opposites to one-sided relationships */
   resolvedDbFields: Record<string, ResolvedDBField>;
   pluralGraphQLName: string;
+  implementsGraphQLInterfaces: Set<string>;
   types: TypesForList;
   access: ResolvedListAccessControl;
   hooks: ListHooks<BaseGeneratedListTypes>;
@@ -143,10 +149,16 @@ export function initialiseLists(
       pluralGraphQLName: getNamesFromList(listKey, listConfig).pluralGraphQLName,
     });
 
-    let output = graphql.object<ItemRootValue>()({
+    let outputConfig = {
       name: names.outputTypeName,
       fields: () => {
-        const { fields } = lists[listKey];
+        const list = lists[listKey];
+
+        // Add the list object to listInfos, to make it accessible from field initialization
+        // functions that might need metadata from it (e.g. the relationship field)
+        listInfos[listKey].initialisedList = list;
+
+        const { fields } = list;
         return {
           ...Object.fromEntries(
             Object.entries(fields).flatMap(([fieldPath, field]) => {
@@ -161,6 +173,19 @@ export function initialiseLists(
                 [fieldPath, field.output] as const,
                 ...Object.entries(field.extraOutputFields || {}),
               ].map(([outputTypeFieldName, outputField]) => {
+                // // temp
+                // if (outputField.type.kind === 'object') {
+                //   return [
+                //     outputTypeFieldName,
+                //     graphql.field({
+                //       type: graphql.String,
+                //       resolve() {
+                //         return null;
+                //       },
+                //     }),
+                //   ];
+                // }
+
                 return [
                   outputTypeFieldName,
                   outputTypeField(
@@ -178,7 +203,45 @@ export function initialiseLists(
           ),
         };
       },
-    });
+    };
+    let output = graphql.object<ItemRootValue>()(outputConfig);
+
+    // let output = graphql.object<ItemRootValue>()({
+    //   name: names.outputTypeName,
+    //   fields: () => {
+    //     const { fields } = lists[listKey];
+    //     return {
+    //       ...Object.fromEntries(
+    //         Object.entries(fields).flatMap(([fieldPath, field]) => {
+    //           if (
+    //             !field.output ||
+    //             !field.graphql.isEnabled.read ||
+    //             (field.dbField.kind === 'relation' && !isEnabled[field.dbField.list].query)
+    //           ) {
+    //             return [];
+    //           }
+    //           return [
+    //             [fieldPath, field.output] as const,
+    //             ...Object.entries(field.extraOutputFields || {}),
+    //           ].map(([outputTypeFieldName, outputField]) => {
+    //             return [
+    //               outputTypeFieldName,
+    //               outputTypeField(
+    //                 outputField,
+    //                 field.dbField,
+    //                 field.graphql?.cacheHint,
+    //                 field.access.read,
+    //                 listKey,
+    //                 fieldPath,
+    //                 lists
+    //               ),
+    //             ];
+    //           });
+    //         })
+    //       ),
+    //     };
+    //   },
+    // });
 
     const uniqueWhere = graphql.inputObject({
       name: names.whereUniqueInputName,
@@ -331,7 +394,9 @@ export function initialiseLists(
         },
       });
     }
+
     listInfos[listKey] = {
+      // listConfig,
       types: {
         output,
         uniqueWhere,
@@ -360,6 +425,7 @@ export function initialiseLists(
   }
 
   const listsWithInitialisedFields = Object.fromEntries(
+    // Object.entries(listsWithResolvedDBFields_1).map(([listKey, list]) => [
     Object.entries(listsConfig).map(([listKey, list]) => [
       listKey,
       {
@@ -408,9 +474,33 @@ export function initialiseLists(
         ...getNamesFromList(listKey, list),
         hooks: list.hooks,
         access: list.access,
+        implementsGraphQLInterfaces: new Set<string>(),
       },
     ])
   );
+
+  const polymorphicInterfaces: Record<string, graphql.InterfaceType<any, any>> = {
+    Chunk: graphql.interface()({
+      name: 'Chunk',
+      fields: {
+        id: graphql.field({
+          type: graphql.nonNull(graphql.ID),
+          // TODO
+          resolve() {
+            return null;
+          },
+        }),
+        chunkName: graphql.field({
+          type: graphql.String,
+          // type: graphql.nonNull(graphql.String),
+          // TODO
+          resolve() {
+            return null;
+          },
+        }),
+      },
+    }),
+  };
 
   const listsWithResolvedDBFields = resolveRelationships(listsWithInitialisedFields);
 
@@ -458,6 +548,34 @@ export function initialiseLists(
   const lists: Record<string, InitialisedList> = {};
 
   for (const [listKey, list] of Object.entries(listsWithInitialisedFieldsAndResolvedDbFields)) {
+    // Check for any GraphQL interfaces that need to be added to the types to
+    // support polymorphic relations
+    if (list.implementsGraphQLInterfaces.size > 0) {
+      const interfaces = Array.from(list.implementsGraphQLInterfaces).map(
+        interfaceName => polymorphicInterfaces[interfaceName]
+      );
+
+      // This will cause the GraphQL interfaces determined by the
+      // resolveRelationships() function to be added to the type in the schema.
+      // We can't just update the type directly because GraphQL schemas are
+      // designed to be immutable once created, and contain references between
+      // types. And we also still need to create the initial types before we
+      // have evaluated all the fields, because the field initialization
+      // (FieldTypeFunc) functions depend on the GraphQL object/interface types
+      // having already been created.
+      //
+      // Our solution is to add the extensions we want to make to a separate
+      // `outputExtension` property that we will merge at the end, when actually
+      // creating the schema.
+      // @see ./graphql-schema.ts
+      listInfos[listKey].types.outputExtension = graphql.object<ItemRootValue>()({
+        name: listInfos[listKey].types.output.graphQLType.name,
+        interfaces,
+        // fields are irrelevant here, since we're only adding interfaces
+        fields: {},
+      });
+    }
+
     lists[listKey] = {
       ...list,
       ...listInfos[listKey],

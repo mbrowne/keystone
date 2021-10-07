@@ -323,8 +323,9 @@ input UserRelateToOneForCreateInput {
   connect: UserWhereUniqueInput
 }
 
-type HeroComponent {
+type HeroComponent implements Chunk {
   id: ID!
+  chunkName: String
   heading: String
   image: ImageFieldOutput
   linkUrl: String
@@ -346,6 +347,7 @@ input HeroComponentOrderByInput {
 }
 
 input HeroComponentUpdateInput {
+  chunkName: String
   heading: String
   image: ImageFieldInput
   linkUrl: String
@@ -357,13 +359,15 @@ input HeroComponentUpdateArgs {
 }
 
 input HeroComponentCreateInput {
+  chunkName: String
   heading: String
   image: ImageFieldInput
   linkUrl: String
 }
 
-type BlockComponent {
+type BlockComponent implements Chunk {
   id: ID!
+  chunkName: String
   heading: String
   image: ImageFieldOutput
   content: BlockComponent_content_Document
@@ -399,6 +403,7 @@ input BlockComponentOrderByInput {
 }
 
 input BlockComponentUpdateInput {
+  chunkName: String
   heading: String
   image: ImageFieldInput
   content: JSON
@@ -410,6 +415,7 @@ input BlockComponentUpdateArgs {
 }
 
 input BlockComponentCreateInput {
+  chunkName: String
   heading: String
   image: ImageFieldInput
   content: JSON
@@ -425,7 +431,8 @@ type Post {
 }
 
 interface Chunk {
-  internalName: String
+  id: ID!
+  chunkName: String
 }
 
 scalar DateTime

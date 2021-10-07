@@ -12,7 +12,11 @@ import {
 } from '../../../types';
 import { graphql } from '../../..';
 import { getOperationAccess, getAccessFilters } from '../access-control';
-import { ResolvedDBField, ResolvedRelationDBField } from '../resolve-relationships';
+import {
+  ResolvedDBField,
+  ResolvedPolymorphicRelationDBField,
+  ResolvedRelationDBField,
+} from '../resolve-relationships';
 import { InitialisedList } from '../types-for-lists';
 import { IdType, getDBFieldKeyForFieldOnMultiField, runWithPrisma } from '../utils';
 import { accessReturnError, extensionError } from '../graphql-errors';
@@ -93,6 +97,29 @@ function getRelationVal(
   }
 }
 
+function getPolymorphicRelationVal(
+  dbField: ResolvedPolymorphicRelationDBField,
+  lists: Record<string, InitialisedList>,
+  id: IdType,
+  context: KeystoneContext,
+  info: GraphQLResolveInfo
+) {
+  // dbField.joinModelName
+
+  if (dbField.mode === 'many') {
+    return {
+      findMany: async (args: FindManyArgsValue) =>
+        queries.findManyPolymorphic(args, dbField, lists, context, info, id),
+
+      // TODO
+      // count: async ({ where }: { where: TypesForList['where'] }) =>
+      //   queries.countPolymorphic({ where }, context, info, id),
+    };
+  } else {
+    // TODO
+  }
+}
+
 function getValueForDBField(
   rootVal: ItemRootValue,
   dbField: ResolvedDBField,
@@ -109,14 +136,15 @@ function getValueForDBField(
         return [innerDBFieldKey, rootVal[keyOnDbValue] as any];
       })
     );
-  }
-  if (dbField.kind === 'relation') {
+  } else if (dbField.kind === 'relation') {
     // If we're holding a foreign key value, let's take advantage of that.
     let fk: IdType | undefined;
     if (dbField.mode === 'one' && dbField.foreignIdField !== 'none') {
       fk = rootVal[`${fieldPath}Id`] as IdType;
     }
     return getRelationVal(dbField, id, lists[dbField.list], context, info, fk);
+  } else if (dbField.kind === 'polymorphicRelation') {
+    return getPolymorphicRelationVal(dbField, lists, id, context, info);
   } else {
     return rootVal[fieldPath] as any;
   }

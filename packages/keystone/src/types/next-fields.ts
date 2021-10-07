@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
-import { graphql } from '..';
+import { BaseFields, graphql, ListConfig } from '..';
+import { InitialisedList } from '../lib/core/types-for-lists';
 import { BaseGeneratedListTypes } from './utils';
 import { CommonFieldConfig } from './config';
 import { DatabaseProvider } from './core';
@@ -11,7 +12,18 @@ export type ItemRootValue = { id: { toString(): string }; [key: string]: unknown
 
 export type MaybeFunction<Params extends any[], Ret> = Ret | ((...params: Params) => Ret);
 
-export type ListInfo = { types: TypesForList };
+export type ListInfo = {
+  types: TypesForList;
+  initialisedList?: InitialisedList;
+};
+
+// export type ListInfo<
+//   TGeneratedListTypes extends BaseGeneratedListTypes = any,
+//   Fields extends BaseFields<TGeneratedListTypes> = any
+// > = {
+//   listConfig: ListConfig<TGeneratedListTypes, Fields>;
+//   types: TypesForList;
+// };
 
 export type FieldData = {
   lists: Record<string, ListInfo>;
@@ -124,9 +136,12 @@ export type RelationDBField<Mode extends 'many' | 'one'> = {
 
 // Polymorphic relations are relations from a source type to multiple
 // possible destination types
-export type PolymorphicRelationDBField<TRelationship extends 'many' | 'one' = 'many' | 'one'> = {
+export type PolymorphicRelationDBField<Mode extends 'many' | 'one' = 'many' | 'one'> = {
   kind: 'polymorphicRelation';
-  fields: Record<string, RelationDBField<TRelationship>>;
+  mode: Mode;
+  // name of the prisma model that will be mapped to a join table in the DB
+  joinModelName: string;
+  fields: Record<string, RelationDBField<Mode>>;
 };
 
 export type EnumDBField<Value extends string, Mode extends 'required' | 'many' | 'optional'> = {
@@ -203,7 +218,7 @@ type DBFieldToOutputValue<TDBField extends DBField> = TDBField extends ScalarDBF
       required: ScalarPrismaTypes[Scalar];
       many: ScalarPrismaTypes[Scalar][];
     }[Mode]
-  : TDBField extends RelationDBField<infer Mode>
+  : TDBField extends RelationDBField<infer Mode> | PolymorphicRelationDBField<infer Mode>
   ? {
       one: () => Promise<ItemRootValue>;
       many: {
@@ -392,6 +407,7 @@ export type TypesForList = {
   where: AnyInputObj;
   orderBy: AnyInputObj;
   output: graphql.ObjectType<ItemRootValue> | graphql.InterfaceType<ItemRootValue, any>;
+  outputExtension?: graphql.ObjectType<ItemRootValue> | graphql.InterfaceType<ItemRootValue, any>;
   findManyArgs: FindManyArgs;
   relateTo: {
     many: {

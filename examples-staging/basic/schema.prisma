@@ -44,6 +44,7 @@ model PhoneNumber {
 
 model HeroComponent {
   id              String  @id @default(cuid())
+  chunkName       String  @default("")
   heading         String  @default("")
   image_filesize  Int?
   image_extension String?
@@ -56,6 +57,7 @@ model HeroComponent {
 
 model BlockComponent {
   id              String  @id @default(cuid())
+  chunkName       String  @default("")
   heading         String  @default("")
   image_filesize  Int?
   image_extension String?

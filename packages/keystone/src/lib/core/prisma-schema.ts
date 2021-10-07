@@ -236,8 +236,7 @@ generator client {
     prismaSchema += `model ${listKey} {`;
     for (const [fieldPath, field] of Object.entries(resolvedDbFields)) {
       if (field.kind === 'polymorphicRelation') {
-        const joinModelName = listKey + upcase(fieldPath);
-        polymorphicRelationFields[joinModelName] = {
+        polymorphicRelationFields[field.joinModelName] = {
           listKey,
           fieldPath,
         };
