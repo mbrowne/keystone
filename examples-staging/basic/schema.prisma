@@ -42,14 +42,49 @@ model PhoneNumber {
   @@index([userId])
 }
 
+model HeroComponent {
+  id              String  @id @default(cuid())
+  chunkName       String  @default("")
+  heading         String  @default("")
+  image_filesize  Int?
+  image_extension String?
+  image_width     Int?
+  image_height    Int?
+  image_mode      String?
+  image_id        String?
+  linkUrl         String  @default("")
+}
+
+model BlockComponent {
+  id              String  @id @default(cuid())
+  chunkName       String  @default("")
+  heading         String  @default("")
+  image_filesize  Int?
+  image_extension String?
+  image_width     Int?
+  image_height    Int?
+  image_mode      String?
+  image_id        String?
+  content         String  @default("[{\"type\":\"paragraph\",\"children\":[{\"text\":\"\"}]}]")
+}
+
 model Post {
   id          String    @id @default(cuid())
   title       String    @default("")
   status      String    @default("draft")
-  content     String    @default("[{\"type\":\"paragraph\",\"children\":[{\"text\":\"\"}]}]")
   publishDate DateTime?
   author      User?     @relation("Post_author", fields: [authorId], references: [id])
   authorId    String?   @map("author")
 
   @@index([authorId])
+}
+
+model PostContent {
+  postId      String
+  contentType String
+  contentId   String
+  order       Int
+
+  @@unique([postId, contentType, contentId])
+  @@index([order])
 }

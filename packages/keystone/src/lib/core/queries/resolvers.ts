@@ -1,5 +1,11 @@
 import { GraphQLResolveInfo } from 'graphql';
-import { FindManyArgsValue, ItemRootValue, KeystoneContext, OrderDirection } from '../../../types';
+import {
+  FindManyArgsValue,
+  ItemRootValue,
+  KeystoneContext,
+  OrderDirection,
+  PolymorphicRelationDBField,
+} from '../../../types';
 import { getOperationAccess, getAccessFilters } from '../access-control';
 import {
   PrismaFilter,
@@ -11,8 +17,14 @@ import {
 } from '../where-inputs';
 import { limitsExceededError, userInputError } from '../graphql-errors';
 import { InitialisedList } from '../types-for-lists';
-import { getDBFieldKeyForFieldOnMultiField, runWithPrisma } from '../utils';
+import {
+  customOperationWithPrisma,
+  getDBFieldKeyForFieldOnMultiField,
+  IdType,
+  runWithPrisma,
+} from '../utils';
 import { checkFilterOrderAccess } from '../filter-order-access';
+import { ResolvedPolymorphicRelationDBField } from '../resolve-relationships';
 
 // doing this is a result of an optimisation to skip doing a findUnique and then a findFirst(where the second one is done with access control)
 // we want to do this explicit mapping because:
@@ -119,6 +131,12 @@ export async function findOne(
   // Apply access control
   const filter = await accessControlledFilter(list, context, resolvedWhere, accessFilters);
 
+  // const result = runWithPrisma(context, list, model => model.findFirst({ where: filter }));
+  // result.then(r => {
+  //   console.log('result: ', r);
+  // });
+  // return result;
+
   return runWithPrisma(context, list, model => model.findFirst({ where: filter }));
 }
 
@@ -162,12 +180,115 @@ export async function findMany(
 
   applyMaxResults(results, list, context);
 
+  // //temp
+  // // if (list.listKey === 'Post') {
+  // for (const item of results) {
+  //   console.log('item: ', item);
+  //   item.content = [];
+  // }
+  // // }
+
   if (info.cacheControl && list.cacheHint) {
     info.cacheControl.setCacheHint(
       list.cacheHint({ results, operationName: info.operation.name?.value, meta: false }) as any
     );
   }
   return results;
+}
+
+export async function findManyPolymorphic(
+  { where, take, skip, orderBy: rawOrderBy }: FindManyArgsValue,
+  dbField: ResolvedPolymorphicRelationDBField,
+  lists: Record<string, InitialisedList>,
+  context: KeystoneContext,
+  info: GraphQLResolveInfo,
+  sourceId: IdType
+): Promise<ItemRootValue[]> {
+  if (rawOrderBy) {
+    throw Error('orderBy not yet supported for polymorphic relations');
+  }
+
+  for (const foreignField of Object.values(dbField.fields)) {
+    const list = lists[foreignField.list];
+    if (list.maxResults && list.maxResults < Infinity) {
+      throw Error(
+        'list.maxResults is not currently supported when the list is one of the refs' +
+          ' of a polymorphic relationship'
+      );
+    }
+
+    // Check operation permission, throw access denied if not allowed
+    const operationAccess = await getOperationAccess(list, context, 'query');
+    if (!operationAccess) {
+      return [];
+    }
+
+    const accessFilters = await getAccessFilters(list, context, 'query');
+    if (accessFilters === false) {
+      return [];
+    }
+
+    // Check filter access
+    await checkFilterAccess(list, context, where);
+  }
+
+  // TODO adjust this to work with polymorphic relations
+  // applyEarlyMaxResults(take, list);
+
+  // TODO
+  // let resolvedWhere = await resolveWhereInputPolymorphic(where, list, context);
+  //
+  // resolvedWhere = await accessControlledFilter(list, context, resolvedWhere, accessFilters);
+
+  // Resolve polymorphic relations, if any
+  try {
+    const orderByFields = ['order'];
+
+    const results = await customOperationWithPrisma(
+      context,
+      prisma =>
+        prisma.$queryRaw`SELECT contentType as __typename, 'TODO' as chunkName, contentId, ${'order'}
+          FROM PostContent
+          WHERE postId = ${sourceId}
+          ORDER BY ${orderByFields.join(',')}`
+    );
+    console.log('results', results);
+
+    if (info.cacheControl) {
+      console.warn('Warning: cacheControl is not currently supported for polymorphic relations');
+    }
+
+    //temp
+    const interfaceFields = ['chunkName'];
+
+    const resolvedItems = results.map(row => {
+      const item: ItemRootValue = {
+        id: row.id,
+      };
+      for (const interfaceField of interfaceFields) {
+        item[interfaceField] = row[interfaceField];
+      }
+      return item;
+    });
+    console.log('resolvedItems', resolvedItems);
+
+    return [
+      {
+        __typename: 'HeroComponent',
+        id: 'a',
+        chunkName: 'teswt',
+      },
+    ];
+
+    return resolvedItems;
+
+    // TODO
+    // applyMaxResults(results, list, context);
+  } catch (e) {
+    // TEMP
+    console.log(e);
+    throw e;
+  }
 }
 
 async function resolveOrderBy(

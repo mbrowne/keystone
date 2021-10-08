@@ -108,6 +108,9 @@ export function createAdminMeta(
     }
 
     for (const [fieldKey, field] of Object.entries(list.fields)) {
+      // console.log('** fieldKey', fieldKey);
+      // console.log('** field: ', field);
+
       // If the field is a relationship field and is related to an omitted list, skip.
       if (field.dbField.kind === 'relation' && omittedLists.includes(field.dbField.list)) continue;
       // FIXME: Disabling this entirely for now until the Admin UI can properly

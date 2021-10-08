@@ -30,6 +30,28 @@ type Mutation {
   updatePhoneNumbers(data: [PhoneNumberUpdateArgs!]!): [PhoneNumber]
   deletePhoneNumber(where: PhoneNumberWhereUniqueInput!): PhoneNumber
   deletePhoneNumbers(where: [PhoneNumberWhereUniqueInput!]!): [PhoneNumber]
+  createHeroComponent(data: HeroComponentCreateInput!): HeroComponent
+  createHeroComponents(data: [HeroComponentCreateInput!]!): [HeroComponent]
+  updateHeroComponent(
+    where: HeroComponentWhereUniqueInput!
+    data: HeroComponentUpdateInput!
+  ): HeroComponent
+  updateHeroComponents(data: [HeroComponentUpdateArgs!]!): [HeroComponent]
+  deleteHeroComponent(where: HeroComponentWhereUniqueInput!): HeroComponent
+  deleteHeroComponents(
+    where: [HeroComponentWhereUniqueInput!]!
+  ): [HeroComponent]
+  createBlockComponent(data: BlockComponentCreateInput!): BlockComponent
+  createBlockComponents(data: [BlockComponentCreateInput!]!): [BlockComponent]
+  updateBlockComponent(
+    where: BlockComponentWhereUniqueInput!
+    data: BlockComponentUpdateInput!
+  ): BlockComponent
+  updateBlockComponents(data: [BlockComponentUpdateArgs!]!): [BlockComponent]
+  deleteBlockComponent(where: BlockComponentWhereUniqueInput!): BlockComponent
+  deleteBlockComponents(
+    where: [BlockComponentWhereUniqueInput!]!
+  ): [BlockComponent]
   createPost(data: PostCreateInput!): Post
   createPosts(data: [PostCreateInput!]!): [Post]
   updatePost(where: PostWhereUniqueInput!, data: PostUpdateInput!): Post
@@ -117,16 +139,6 @@ type PasswordState {
 input UserWhereUniqueInput {
   id: ID
   email: String
-}
-
-type LocalImageFieldOutput implements ImageFieldOutput {
-  id: ID!
-  filesize: Int!
-  width: Int!
-  height: Int!
-  extension: ImageExtension!
-  ref: String!
-  src: String!
 }
 
 type LocalFileFieldOutput implements FileFieldOutput {
@@ -311,17 +323,116 @@ input UserRelateToOneForCreateInput {
   connect: UserWhereUniqueInput
 }
 
+type HeroComponent implements Chunk {
+  id: ID!
+  chunkName: String
+  heading: String
+  image: ImageFieldOutput
+  linkUrl: String
+}
+
+input HeroComponentWhereUniqueInput {
+  id: ID
+}
+
+input HeroComponentWhereInput {
+  AND: [HeroComponentWhereInput!]
+  OR: [HeroComponentWhereInput!]
+  NOT: [HeroComponentWhereInput!]
+  id: IDFilter
+}
+
+input HeroComponentOrderByInput {
+  id: OrderDirection
+}
+
+input HeroComponentUpdateInput {
+  chunkName: String
+  heading: String
+  image: ImageFieldInput
+  linkUrl: String
+}
+
+input HeroComponentUpdateArgs {
+  where: HeroComponentWhereUniqueInput!
+  data: HeroComponentUpdateInput!
+}
+
+input HeroComponentCreateInput {
+  chunkName: String
+  heading: String
+  image: ImageFieldInput
+  linkUrl: String
+}
+
+type BlockComponent implements Chunk {
+  id: ID!
+  chunkName: String
+  heading: String
+  image: ImageFieldOutput
+  content: BlockComponent_content_Document
+}
+
+type BlockComponent_content_Document {
+  document(hydrateRelationships: Boolean! = false): JSON!
+}
+
+input BlockComponentWhereUniqueInput {
+  id: ID
+}
+
+type LocalImageFieldOutput implements ImageFieldOutput {
+  id: ID!
+  filesize: Int!
+  width: Int!
+  height: Int!
+  extension: ImageExtension!
+  ref: String!
+  src: String!
+}
+
+input BlockComponentWhereInput {
+  AND: [BlockComponentWhereInput!]
+  OR: [BlockComponentWhereInput!]
+  NOT: [BlockComponentWhereInput!]
+  id: IDFilter
+}
+
+input BlockComponentOrderByInput {
+  id: OrderDirection
+}
+
+input BlockComponentUpdateInput {
+  chunkName: String
+  heading: String
+  image: ImageFieldInput
+  content: JSON
+}
+
+input BlockComponentUpdateArgs {
+  where: BlockComponentWhereUniqueInput!
+  data: BlockComponentUpdateInput!
+}
+
+input BlockComponentCreateInput {
+  chunkName: String
+  heading: String
+  image: ImageFieldInput
+  content: JSON
+}
+
 type Post {
   id: ID!
   title: String
   status: String
-  content: Post_content_Document
+  content: [Chunk!]
   publishDate: DateTime
   author: User
 }
 
-type Post_content_Document {
-  document(hydrateRelationships: Boolean! = false): JSON!
+interface Chunk {
+  id: ID!
+  chunkName: String
 }
 
 scalar DateTime
@@ -345,9 +456,19 @@ input PostOrderByInput {
 input PostUpdateInput {
   title: String
   status: String
-  content: JSON
+  content: PostContentRelateToManyForUpdateInput
   publishDate: DateTime
   author: UserRelateToOneForUpdateInput
+}
+
+input PostContentRelateToManyForUpdateInput {
+  disconnect: [PostContentWhereUniqueInput!]
+  set: [PostContentWhereUniqueInput!]
+  connect: [PostContentWhereUniqueInput!]
+}
+
+input PostContentWhereUniqueInput {
+  id: ID
 }
 
 input PostUpdateArgs {
@@ -358,7 +479,6 @@ input PostUpdateArgs {
 input PostCreateInput {
   title: String
   status: String
-  content: JSON
   publishDate: DateTime
   author: UserRelateToOneForCreateInput
 }
@@ -390,6 +510,22 @@ type Query {
   ): [PhoneNumber!]
   phoneNumber(where: PhoneNumberWhereUniqueInput!): PhoneNumber
   phoneNumbersCount(where: PhoneNumberWhereInput! = {}): Int
+  heroComponents(
+    where: HeroComponentWhereInput! = {}
+    orderBy: [HeroComponentOrderByInput!]! = []
+    take: Int
+    skip: Int! = 0
+  ): [HeroComponent!]
+  heroComponent(where: HeroComponentWhereUniqueInput!): HeroComponent
+  heroComponentsCount(where: HeroComponentWhereInput! = {}): Int
+  blockComponents(
+    where: BlockComponentWhereInput! = {}
+    orderBy: [BlockComponentOrderByInput!]! = []
+    take: Int
+    skip: Int! = 0
+  ): [BlockComponent!]
+  blockComponent(where: BlockComponentWhereUniqueInput!): BlockComponent
+  blockComponentsCount(where: BlockComponentWhereInput! = {}): Int
   posts(
     where: PostWhereInput! = {}
     orderBy: [PostOrderByInput!]! = []

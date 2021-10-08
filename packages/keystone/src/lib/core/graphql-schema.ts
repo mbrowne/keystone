@@ -1,4 +1,5 @@
 import { GraphQLNamedType, GraphQLSchema } from 'graphql';
+import { mergeSchemas } from '@graphql-tools/schema';
 import { DatabaseProvider } from '../../types';
 import { graphql } from '../..';
 import { InitialisedList } from './types-for-lists';
@@ -28,11 +29,23 @@ export function getGraphQLSchema(
       })
     ),
   });
+
   const graphQLSchema = new GraphQLSchema({
     query: query.graphQLType,
     mutation: mutation.graphQLType,
     types: collectTypes(lists, updateManyByList),
   });
+
+  const outputTypeExtensions = Object.values(lists)
+    .map(list => list.types.outputExtension?.graphQLType!)
+    .filter(Boolean);
+
+  if (outputTypeExtensions.length) {
+    return mergeSchemas({
+      schemas: [graphQLSchema, new GraphQLSchema({ types: outputTypeExtensions })],
+    });
+  }
+
   return graphQLSchema;
 }
 
@@ -44,6 +57,7 @@ function collectTypes(
   for (const list of Object.values(lists)) {
     const { isEnabled } = list.graphql;
     if (!isEnabled.type) continue;
+
     // adding all of these types explicitly isn't strictly necessary but we do it to create a certain order in the schema
     collectedTypes.push(list.types.output.graphQLType);
     if (isEnabled.query || isEnabled.update || isEnabled.delete) {

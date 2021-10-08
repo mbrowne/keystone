@@ -107,6 +107,13 @@ export const Field = ({
   onChange,
   forceValidation,
 }: FieldProps<typeof controller>) => {
+  //temp
+  if (field.path === 'content') {
+    console.log('value', value);
+
+    return <div />;
+  }
+
   const keystone = useKeystone();
   const foreignList = useList(field.refListKey);
   const localList = useList(field.listKey);
@@ -369,6 +376,9 @@ type RelationshipController = FieldController<
 export const controller = (
   config: FieldControllerConfig<
     {
+      // mhb
+      // TODO
+      // switch to refListKeys: string[]
       refListKey: string;
       many: boolean;
       hideCreate: boolean;
@@ -391,6 +401,9 @@ export const controller = (
     )
   >
 ): RelationshipController => {
+  //temp
+  console.log('config.path', config.path);
+
   return {
     many: config.fieldMeta.many,
     listKey: config.listKey,
