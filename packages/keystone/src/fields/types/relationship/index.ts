@@ -209,28 +209,42 @@ export const relationship = <TGeneratedListTypes extends BaseGeneratedListTypes>
     const joinModelName = meta.listKey + upcase(meta.fieldKey);
     const relationTypeName = joinModelName;
 
-    const where: TypesForList['where'] = graphql.inputObject({
-      // TODO we might want to use getGqlNames() for all the graphql names
-      // including this one
-      name: relationTypeName + 'WhereInput',
+    // TODO we might want to use getGqlNames()
+    const names = {
+      whereInputName: relationTypeName + 'WhereInput',
+      whereUniqueInputName: relationTypeName + 'WhereUniqueInput',
+      relateToManyForUpdateInputName: relationTypeName + 'RelateToManyForUpdateInput',
+    };
 
+    const uniqueWhere = graphql.inputObject({
+      name: names.whereUniqueInputName,
       fields: () => {
-        // Get the 'where' type for the ID field of related items.
+        // Get the ID field for related items.
         // Since all related lists should have the same ID field type, we can just
         // grab the first one.
         const firstForeignField = Object.values(foreignFields)[0];
-        // const foreignListConfig = meta.lists[firstForeignField.list].listConfig;
-        // console.log('foreignListConfig.fields.id', foreignListConfig.fields.id);
         const foreignList = meta.lists[firstForeignField.list];
-        // console.log('meta.lists[firstForeignField.list]', meta.lists[firstForeignField.list]);
-        // const idField = meta.lists[firstForeignField.list].fields.id
+        const idField = foreignList.getInitialisedList().fields.id;
 
-        if (!foreignList.initialisedList) {
-          throw Error(
-            `Expected initialized list for '${firstForeignField.list}', but it wasn't initialized yet`
-          );
-        }
-        const idField = foreignList.initialisedList.fields.id;
+        // just support ID filtering for now
+        return {
+          // TODO this should be an enum that only permits the configured types
+          // _type: graphql.arg({ type: graphql.String }),
+          id: idField.input?.uniqueWhere?.arg,
+        };
+      },
+    });
+
+    const where: TypesForList['where'] = graphql.inputObject({
+      name: names.whereInputName,
+
+      fields: () => {
+        // Get the ID field for related items.
+        // Since all related lists should have the same ID field type, we can just
+        // grab the first one.
+        const firstForeignField = Object.values(foreignFields)[0];
+        const foreignList = meta.lists[firstForeignField.list];
+        const idField = foreignList.getInitialisedList().fields.id;
 
         return Object.assign(
           {
@@ -247,7 +261,36 @@ export const relationship = <TGeneratedListTypes extends BaseGeneratedListTypes>
     });
 
     //TODO
+    // const _isEnabled = isEnabled[listKey];
+    const _isEnabled = {
+      type: true,
+      create: false,
+      // create: true,
+    };
+
     let relateToManyForCreate, relateToManyForUpdate, relateToOneForCreate, relateToOneForUpdate;
+
+    if (_isEnabled.type) {
+      relateToManyForUpdate = graphql.inputObject({
+        name: names.relateToManyForUpdateInputName,
+        fields: () => {
+          return {
+            // The order of these fields reflects the order in which they are applied
+            // in the mutation.
+            disconnect: graphql.arg({ type: graphql.list(graphql.nonNull(uniqueWhere)) }),
+            set: graphql.arg({ type: graphql.list(graphql.nonNull(uniqueWhere)) }),
+            // TODO
+            // // Create via a relationship is only supported if this list allows create
+            // ...(_isEnabled.create && {
+            //   create: graphql.arg({ type: graphql.list(graphql.nonNull(create)) }),
+            // }),
+            connect: graphql.arg({ type: graphql.list(graphql.nonNull(uniqueWhere)) }),
+          };
+        },
+      });
+
+      // TODO relateToManyForCreate, etc
+    }
 
     // TODO
     const listTypes: TypesForList = {

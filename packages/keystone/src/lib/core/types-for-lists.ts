@@ -149,16 +149,10 @@ export function initialiseLists(
       pluralGraphQLName: getNamesFromList(listKey, listConfig).pluralGraphQLName,
     });
 
-    let outputConfig = {
+    let output = graphql.object<ItemRootValue>()({
       name: names.outputTypeName,
       fields: () => {
-        const list = lists[listKey];
-
-        // Add the list object to listInfos, to make it accessible from field initialization
-        // functions that might need metadata from it (e.g. the relationship field)
-        listInfos[listKey].initialisedList = list;
-
-        const { fields } = list;
+        const { fields } = lists[listKey];
         return {
           ...Object.fromEntries(
             Object.entries(fields).flatMap(([fieldPath, field]) => {
@@ -173,19 +167,6 @@ export function initialiseLists(
                 [fieldPath, field.output] as const,
                 ...Object.entries(field.extraOutputFields || {}),
               ].map(([outputTypeFieldName, outputField]) => {
-                // // temp
-                // if (outputField.type.kind === 'object') {
-                //   return [
-                //     outputTypeFieldName,
-                //     graphql.field({
-                //       type: graphql.String,
-                //       resolve() {
-                //         return null;
-                //       },
-                //     }),
-                //   ];
-                // }
-
                 return [
                   outputTypeFieldName,
                   outputTypeField(
@@ -203,45 +184,7 @@ export function initialiseLists(
           ),
         };
       },
-    };
-    let output = graphql.object<ItemRootValue>()(outputConfig);
-
-    // let output = graphql.object<ItemRootValue>()({
-    //   name: names.outputTypeName,
-    //   fields: () => {
-    //     const { fields } = lists[listKey];
-    //     return {
-    //       ...Object.fromEntries(
-    //         Object.entries(fields).flatMap(([fieldPath, field]) => {
-    //           if (
-    //             !field.output ||
-    //             !field.graphql.isEnabled.read ||
-    //             (field.dbField.kind === 'relation' && !isEnabled[field.dbField.list].query)
-    //           ) {
-    //             return [];
-    //           }
-    //           return [
-    //             [fieldPath, field.output] as const,
-    //             ...Object.entries(field.extraOutputFields || {}),
-    //           ].map(([outputTypeFieldName, outputField]) => {
-    //             return [
-    //               outputTypeFieldName,
-    //               outputTypeField(
-    //                 outputField,
-    //                 field.dbField,
-    //                 field.graphql?.cacheHint,
-    //                 field.access.read,
-    //                 listKey,
-    //                 fieldPath,
-    //                 lists
-    //               ),
-    //             ];
-    //           });
-    //         })
-    //       ),
-    //     };
-    //   },
-    // });
+    });
 
     const uniqueWhere = graphql.inputObject({
       name: names.whereUniqueInputName,
@@ -396,7 +339,16 @@ export function initialiseLists(
     }
 
     listInfos[listKey] = {
-      // listConfig,
+      // Add the initialised list object to listInfos, to make it accessible from field
+      // initialization functions that might need metadata from it (e.g. the relationship
+      // field)
+      getInitialisedList: () => {
+        const list = lists[listKey];
+        if (list) {
+          return list;
+        }
+        throw Error(`List '${listKey}' not initialised yet'`);
+      },
       types: {
         output,
         uniqueWhere,

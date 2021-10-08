@@ -14,7 +14,7 @@ export type MaybeFunction<Params extends any[], Ret> = Ret | ((...params: Params
 
 export type ListInfo = {
   types: TypesForList;
-  initialisedList?: InitialisedList;
+  getInitialisedList: () => InitialisedList;
 };
 
 // export type ListInfo<

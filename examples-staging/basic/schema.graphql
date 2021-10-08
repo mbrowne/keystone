@@ -456,8 +456,19 @@ input PostOrderByInput {
 input PostUpdateInput {
   title: String
   status: String
+  content: PostContentRelateToManyForUpdateInput
   publishDate: DateTime
   author: UserRelateToOneForUpdateInput
+}
+
+input PostContentRelateToManyForUpdateInput {
+  disconnect: [PostContentWhereUniqueInput!]
+  set: [PostContentWhereUniqueInput!]
+  connect: [PostContentWhereUniqueInput!]
+}
+
+input PostContentWhereUniqueInput {
+  id: ID
 }
 
 input PostUpdateArgs {

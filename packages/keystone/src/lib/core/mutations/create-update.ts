@@ -1,6 +1,6 @@
 import pLimit, { Limit } from 'p-limit';
 import { KeystoneContext, DatabaseProvider, ItemRootValue } from '../../../types';
-import { ResolvedDBField } from '../resolve-relationships';
+import { ResolvedDBField, ResolvedRelationDBField } from '../resolve-relationships';
 import { InitialisedList } from '../types-for-lists';
 import {
   promiseAllRejectWithAllErrors,
@@ -13,16 +13,15 @@ import { accessDeniedError, extensionError, resolverError } from '../graphql-err
 import { getOperationAccess, getAccessFilters } from '../access-control';
 import { checkFilterOrderAccess } from '../filter-order-access';
 import {
-  resolveRelateToManyForCreateInput,
-  resolveRelateToManyForUpdateInput,
-} from './nested-mutation-many-input-resolvers';
-import {
-  resolveRelateToOneForCreateInput,
-  resolveRelateToOneForUpdateInput,
-} from './nested-mutation-one-input-resolvers';
+  inputResolvers,
+  MutationPolymorphicRelationInputResolver,
+  MutationStandardRelationInputResolver,
+} from './nested-mutation-input-resolvers';
 import { applyAccessControlForCreate, getAccessControlledItemForUpdate } from './access-control';
 import { runSideEffectOnlyHook } from './hooks';
 import { validateUpdateCreate } from './validation';
+import { RelationshipField } from '@keystone-next/fields-document/component-blocks';
+import { InitialisedPolymorphicRelationshipField } from './nested-mutation-input-resolvers/types';
 
 async function createSingle(
   { data: rawData }: { data: Record<string, any> },
@@ -240,7 +239,12 @@ async function getResolvedData(
       Object.entries(list.fields).map(async ([fieldKey, field]) => {
         const inputResolver = field.input?.[operation]?.resolve;
         let input = resolvedData[fieldKey];
-        if (inputResolver && field.dbField.kind !== 'relation') {
+
+        if (
+          inputResolver &&
+          field.dbField.kind !== 'relation' &&
+          field.dbField.kind !== 'polymorphicRelation'
+        ) {
           try {
             input = await inputResolver(input, context, undefined);
           } catch (error: any) {
@@ -261,7 +265,10 @@ async function getResolvedData(
       Object.entries(list.fields).map(async ([fieldKey, field]) => {
         const inputResolver = field.input?.[operation]?.resolve;
         let input = resolvedData[fieldKey];
-        if (inputResolver && field.dbField.kind === 'relation') {
+        if (
+          inputResolver &&
+          (field.dbField.kind === 'relation' || field.dbField.kind === 'polymorphicRelation')
+        ) {
           input = await inputResolver(
             input,
             context,
@@ -275,23 +282,45 @@ async function getResolvedData(
                 // No-op: Should this be UserInputError?
                 return () => undefined;
               }
-              const target = `${list.listKey}.${fieldKey}<${field.dbField.list}>`;
-              const foreignList = list.lists[field.dbField.list];
+
+              const isPolymorphic = field.dbField.kind === 'polymorphicRelation';
+              const resolvers = inputResolvers[isPolymorphic ? 'polymorphic' : 'standard'];
+
               let resolver;
               if (field.dbField.mode === 'many') {
                 if (operation === 'create') {
-                  resolver = resolveRelateToManyForCreateInput;
+                  resolver = resolvers.resolveRelateToManyForCreateInput;
                 } else {
-                  resolver = resolveRelateToManyForUpdateInput;
+                  resolver = resolvers.resolveRelateToManyForUpdateInput;
                 }
               } else {
                 if (operation === 'create') {
-                  resolver = resolveRelateToOneForCreateInput;
+                  resolver = resolvers.resolveRelateToOneForCreateInput;
                 } else {
-                  resolver = resolveRelateToOneForUpdateInput;
+                  resolver = resolvers.resolveRelateToOneForUpdateInput;
                 }
               }
-              return resolver(nestedMutationState, context, foreignList, target);
+
+              if (isPolymorphic) {
+                return (resolver as MutationPolymorphicRelationInputResolver)(
+                  nestedMutationState,
+                  context,
+                  fieldKey,
+                  field as InitialisedPolymorphicRelationshipField,
+                  list
+                );
+              }
+
+              const dbField = field.dbField as ResolvedRelationDBField;
+              const target = `${list.listKey}.${fieldKey}<${dbField.list}>`;
+              const foreignList = list.lists[dbField.list];
+
+              return (resolver as MutationStandardRelationInputResolver)(
+                nestedMutationState,
+                context,
+                foreignList,
+                target
+              );
             })()
           );
         }

@@ -1,40 +1,52 @@
-import { KeystoneContext, TypesForList } from '../../../types';
-import { graphql } from '../../..';
-import { resolveUniqueWhereInput, UniqueInputFilter, UniquePrismaFilter } from '../where-inputs';
-import { InitialisedList } from '../types-for-lists';
-import { isRejected, isFulfilled } from '../utils';
-import { userInputError } from '../graphql-errors';
-import { NestedMutationState } from './create-update';
+import { KeystoneContext } from '../../../../types';
+import { InitialisedList } from '../../types-for-lists';
+import { isRejected, isFulfilled } from '../../utils';
+import { userInputError } from '../../graphql-errors';
+import { NestedMutationState } from '../create-update';
+import {
+  CreateOneValueType,
+  UpdateOneValueType,
+  CreateManyValueType,
+  UpdateManyValueType,
+} from './types';
+import { getResolvedUniqueWheres, handleCreateAndUpdate } from './utils';
 
-type _CreateValueType = Exclude<
-  graphql.InferValueFromArg<
-    graphql.Arg<Exclude<TypesForList['relateTo']['many']['create'], undefined>>
-  >,
-  null | undefined
->;
-
-type _UpdateValueType = Exclude<
-  graphql.InferValueFromArg<
-    graphql.Arg<Exclude<TypesForList['relateTo']['many']['update'], undefined>>
-  >,
-  null | undefined
->;
-
-function getResolvedUniqueWheres(
-  uniqueInputs: UniqueInputFilter[],
+export function resolveRelateToOneForCreateInput(
+  nestedMutationState: NestedMutationState,
   context: KeystoneContext,
-  foreignList: InitialisedList
-): Promise<UniquePrismaFilter>[] {
-  return uniqueInputs.map(async uniqueInput => {
-    // Validate and resolve the input filter
-    const uniqueWhere = await resolveUniqueWhereInput(uniqueInput, foreignList.fields, context);
-    // Check whether the item exists
-    const item = await context.db[foreignList.listKey].findOne({ where: uniqueInput });
-    if (item === null) {
-      throw new Error('Unable to find item to connect to.');
+  foreignList: InitialisedList,
+  target: string
+) {
+  return async (value: CreateOneValueType) => {
+    const numOfKeys = Object.keys(value).length;
+    if (numOfKeys !== 1) {
+      throw userInputError(
+        `Nested to-one mutations must provide exactly one field if they're provided but ${target} did not`
+      );
     }
-    return uniqueWhere;
-  });
+    return handleCreateAndUpdate(value, nestedMutationState, context, foreignList, target);
+  };
+}
+
+export function resolveRelateToOneForUpdateInput(
+  nestedMutationState: NestedMutationState,
+  context: KeystoneContext,
+  foreignList: InitialisedList,
+  target: string
+) {
+  return async (value: UpdateOneValueType) => {
+    if (Object.keys(value).length !== 1) {
+      throw userInputError(
+        `Nested to-one mutations must provide exactly one field if they're provided but ${target} did not`
+      );
+    }
+
+    if (value.connect || value.create) {
+      return handleCreateAndUpdate(value, nestedMutationState, context, foreignList, target);
+    } else if (value.disconnect) {
+      return { disconnect: true };
+    }
+  };
 }
 
 export function resolveRelateToManyForCreateInput(
@@ -43,7 +55,7 @@ export function resolveRelateToManyForCreateInput(
   foreignList: InitialisedList,
   target: string
 ) {
-  return async (value: _CreateValueType) => {
+  return async (value: CreateManyValueType) => {
     if (!Array.isArray(value.connect) && !Array.isArray(value.create)) {
       throw userInputError(
         `You must provide at least one field in to-many relationship inputs but none were provided at ${target}`
@@ -85,7 +97,7 @@ export function resolveRelateToManyForUpdateInput(
   foreignList: InitialisedList,
   target: string
 ) {
-  return async (value: _UpdateValueType) => {
+  return async (value: UpdateManyValueType) => {
     if (
       !Array.isArray(value.connect) &&
       !Array.isArray(value.create) &&
