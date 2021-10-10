@@ -247,16 +247,30 @@ export async function findManyPolymorphic(
     const results = await customOperationWithPrisma(
       context,
       prisma =>
-        prisma.$queryRaw`SELECT contentType as __typename, 'TODO' as chunkName, contentId, ${'order'}
+        prisma.$queryRaw`SELECT contentType as __typename, contentId, ${'order'}
           FROM PostContent
           WHERE postId = ${sourceId}
           ORDER BY ${orderByFields.join(',')}`
     );
     console.log('results', results);
 
+    const ids = results.map(row => row.contentId);
+
+    const foreignListKey = 'HeroComponent';
+    const relatedItems = await runWithPrisma(context, lists[foreignListKey], model =>
+      model.findMany({
+        where: { id: { in: ids } },
+      })
+    );
+    console.log('relatedItems', relatedItems);
+
     if (info.cacheControl) {
       console.warn('Warning: cacheControl is not currently supported for polymorphic relations');
     }
+
+    results[0] = { ...results[0], ...relatedItems[0] };
+
+    return results;
 
     //temp
     const interfaceFields = ['chunkName'];
@@ -272,13 +286,13 @@ export async function findManyPolymorphic(
     });
     console.log('resolvedItems', resolvedItems);
 
-    return [
-      {
-        __typename: 'HeroComponent',
-        id: 'a',
-        chunkName: 'teswt',
-      },
-    ];
+    // return [
+    //   {
+    //     __typename: 'HeroComponent',
+    //     id: 'a',
+    //     chunkName: 'teswt',
+    //   },
+    // ];
 
     return resolvedItems;
 

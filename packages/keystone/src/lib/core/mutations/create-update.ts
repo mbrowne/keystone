@@ -16,7 +16,6 @@ import {
   getDBFieldKeyForFieldOnMultiField,
   IdType,
   runWithPrisma,
-  customOperationWithPrisma,
 } from '../utils';
 import { InputFilter, resolveUniqueWhereInput, UniqueInputFilter } from '../where-inputs';
 import { accessDeniedError, extensionError, resolverError } from '../graphql-errors';
