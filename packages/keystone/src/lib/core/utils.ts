@@ -1,7 +1,7 @@
 import pluralize from 'pluralize';
 import { Sql } from '@prisma/client/runtime';
 import { ItemRootValue, KeystoneConfig, KeystoneContext } from '../../types';
-import { humanize } from '../utils';
+import { humanize, lowcase } from '../utils';
 import { prismaError } from './graphql-errors';
 import { InitialisedList } from './types-for-lists';
 import { PrismaFilter, UniquePrismaFilter } from './where-inputs';
@@ -81,7 +81,7 @@ export async function runWithPrisma<T>(
   { listKey }: InitialisedList,
   fn: (model: PrismaModel) => Promise<T>
 ) {
-  const model = context.prisma[listKey[0].toLowerCase() + listKey.slice(1)];
+  const model = context.prisma[lowcase(listKey)];
   try {
     return await fn(model);
   } catch (err: any) {

@@ -218,3 +218,8 @@ async function generatePrismaClient(cwd: string) {
 export function requirePrismaClient(cwd: string) {
   return require(path.join(cwd, 'node_modules/.prisma/client')).PrismaClient;
 }
+
+// allows access to other exports like Prisma.sql
+export function requirePrisma(cwd: string) {
+  return require(path.join(cwd, '/node_modules/.prisma/client'));
+}

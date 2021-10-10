@@ -1,9 +1,9 @@
-import { Prisma } from '@prisma/client';
 import { KeystoneContext } from '../../../../types';
 import { InitialisedField, InitialisedList } from '../../types-for-lists';
 import { isRejected, isFulfilled, IdType, customOperationWithPrisma } from '../../utils';
 import { userInputError } from '../../graphql-errors';
 import { NestedMutationState } from '../create-update';
+import { requirePrisma } from '../../../../artifacts';
 import {
   CreateOneValueType,
   UpdateOneValueType,
@@ -14,6 +14,8 @@ import {
 import { getResolvedUniqueWheres, handleCreateAndUpdate } from './utils';
 import { ResolvedPolymorphicRelationDBField } from '../../resolve-relationships';
 import { resolveUniqueWhereInput, UniqueInputFilter } from '../../where-inputs';
+
+const Prisma = requirePrisma(process.cwd());
 
 function getTarget(
   listKey: string,
@@ -109,34 +111,115 @@ export function resolveRelateToManyForCreateInput(
   };
 }
 
+// for now, assume table name matches list name
+// (TODO find out if there's a way to get the table name from the prisma client)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function getTableName(listKey: string, context: KeystoneContext) {
+  return listKey;
+}
+
+function betterPrismaSql(literals: readonly string[], ...args: any[]) {
+  // const parsedArgs = args
+  //   .map(arg => {
+  //     if (typeof arg === 'object') {
+  //       return false;
+  //     }
+  //     return arg;
+  //   })
+  //   .filter(Boolean);
+
+  const parsedLiterals: string[] = [];
+  const parsedArgs: any[] = [];
+
+  let skipNextLiteral = false;
+  literals.forEach((literal, i) => {
+    const arg = args[i];
+    if (typeof arg === 'object' && arg.__isBetterPrismaSql) {
+      const nestedTemplateArgs = arg.__templateArgs;
+      const [firstNestedLiteral, ...remainingNestedLiterals] = nestedTemplateArgs.literals;
+      parsedLiterals.push(literal + firstNestedLiteral);
+      if (remainingNestedLiterals.length) {
+        remainingNestedLiterals.forEach((nestedLiteral: string, j: number) => {
+          parsedLiterals.push(nestedLiteral);
+          // TODO deeper nesting
+          parsedArgs.push(nestedTemplateArgs.args[j]);
+        });
+      }
+      skipNextLiteral = true;
+    } else {
+      if (!skipNextLiteral) {
+        parsedLiterals.push(literal);
+      } else {
+        skipNextLiteral = false;
+      }
+      if (arg) {
+        parsedArgs.push(arg);
+      }
+    }
+  });
+
+  console.log('parsedLiterals, parsedArgs', parsedLiterals, parsedArgs);
+
+  return {
+    ...Prisma.sql(parsedLiterals, ...parsedArgs),
+    __isBetterPrismaSql: true,
+    __templateArgs: { literals, args },
+  };
+}
+
+const name = 'HeroComponent';
+const r = betterPrismaSql`SELECT id FROM ${betterPrismaSql`${name}`}`;
+console.log('r: ', r);
+
+type ConnectOrDisconnectItem = {
+  id: string;
+  type: string;
+};
+
 async function getRelatedItemsById(
   ids: string[],
   context: KeystoneContext,
   field: InitialisedPolymorphicRelationshipField
   // list: InitialisedList
-) {
-  const foreignTableNames = Object.values(field.dbField.fields).map(
-    foreignField => foreignField.list
+): Promise<ConnectOrDisconnectItem[]> {
+  const foreignTableNames = Object.values(field.dbField.fields).map(foreignField =>
+    getTableName(foreignField.list, context)
   );
 
-  const unionQuery = foreignTableNames
-    .map(name => Prisma.sql`SELECT id FROM ${name}`)
-    .join(' UNION ');
+  const sql = betterPrismaSql;
+  const unionQuery = sql`${foreignTableNames
+    .map(tableName => sql`SELECT id, '${tableName}' as type FROM ${tableName}`)
+    .join(' UNION ')}`;
+
+  // const q = Prisma.sql(
+  //   [
+  //     foreignTableNames.map(name => `SELECT id FROM ${name}`).join(' UNION ') + ' WHERE id IN (',
+  //     ')',
+  //   ],
+  //   ids.join(',')
+  // );
+  // console.log('q: ', q);
+
+  const q = sql`${unionQuery} WHERE id IN (${ids.join(',')})`;
+
+  console.log('q: ', q);
 
   const results = await customOperationWithPrisma(
     context,
-    prisma =>
-      prisma.$queryRaw`${unionQuery}
-        WHERE id IN (${ids.join(',')})`
+    prisma => prisma.$queryRaw(q)
+    // prisma.$queryRaw`${unionQuery}
+    //   WHERE id IN (${ids.join(',')})`
   );
+
+  console.log('results', results);
 }
 
-async function getItemIdsToConnectOrDisconnect(
+async function getItemsToConnectOrDisconnect(
   uniqueInputs: UniqueInputFilter[],
   context: KeystoneContext,
   field: InitialisedPolymorphicRelationshipField,
   list: InitialisedList
-): Promise<string>[] {
+): Promise<ConnectOrDisconnectItem[]> {
   // Validate input filter
   const ids = uniqueInputs.map(uniqueInput => {
     const { id, _type, ...otherFilters } = uniqueInput;
@@ -147,13 +230,13 @@ async function getItemIdsToConnectOrDisconnect(
   });
 
   // Check whether the items exist
-  const verifiedIds = await getRelatedItemsById(ids, context, field);
+  const verifiedItems = await getRelatedItemsById(ids, context, field);
 
   // if (item === null) {
   //   throw new Error('Unable to find item to connect to.');
   // }
 
-  return verifiedIds;
+  return verifiedItems;
 }
 
 export function resolveRelateToManyForUpdateInput(
@@ -182,21 +265,36 @@ export function resolveRelateToManyForUpdateInput(
       );
     }
 
-    // Perform queries for the connections
-    const connects = Promise.allSettled(
-      getItemIdsToConnectOrDisconnect(value.connect || [], context, field, list)
-    );
+    //temp
+    const connects = Promise.resolve(value.connect);
 
-    const disconnects = Promise.allSettled(
-      getItemIdsToConnectOrDisconnect(value.disconnect || [], context, field, list)
-    );
+    // // Perform queries for the connections
+    // const connects = getItemsToConnectOrDisconnect(
+    //   value.connect || [],
+    //   context,
+    //   field,
+    //   list
+    // );
 
-    const sets = Promise.allSettled(getResolvedUniqueWheres(value.set || [], context, foreignList));
+    // const disconnects = getItemsToConnectOrDisconnect(
+    //   value.disconnect || [],
+    //   context,
+    //   field,
+    //   list
+    // );
 
-    // Perform nested mutations for the creations
-    const creates = Promise.allSettled(
-      (value.create || []).map(x => nestedMutationState.create(x, foreignList))
-    );
+    // TODO
+    // const sets = Promise.allSettled(getResolvedUniqueWheres(value.set || [], context, foreignList));
+
+    // TODO
+    // // Perform nested mutations for the creations
+    // const creates = Promise.allSettled(
+    //   (value.create || []).map(x => nestedMutationState.create(x, foreignList))
+    // );
+
+    return {
+      connect: await connects,
+    };
 
     const [connectResult, createResult, disconnectResult, setResult] = await Promise.all([
       connects,

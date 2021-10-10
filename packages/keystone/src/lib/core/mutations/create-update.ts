@@ -1,12 +1,22 @@
 import pLimit, { Limit } from 'p-limit';
-import { KeystoneContext, DatabaseProvider, ItemRootValue } from '../../../types';
-import { ResolvedDBField, ResolvedRelationDBField } from '../resolve-relationships';
+import {
+  KeystoneContext,
+  DatabaseProvider,
+  ItemRootValue,
+  PolymorphicRelationDBField,
+} from '../../../types';
+import {
+  ResolvedDBField,
+  ResolvedPolymorphicRelationDBField,
+  ResolvedRelationDBField,
+} from '../resolve-relationships';
 import { InitialisedList } from '../types-for-lists';
 import {
   promiseAllRejectWithAllErrors,
   getDBFieldKeyForFieldOnMultiField,
   IdType,
   runWithPrisma,
+  customOperationWithPrisma,
 } from '../utils';
 import { InputFilter, resolveUniqueWhereInput, UniqueInputFilter } from '../where-inputs';
 import { accessDeniedError, extensionError, resolverError } from '../graphql-errors';
@@ -22,6 +32,11 @@ import { runSideEffectOnlyHook } from './hooks';
 import { validateUpdateCreate } from './validation';
 import { RelationshipField } from '@keystone-next/fields-document/component-blocks';
 import { InitialisedPolymorphicRelationshipField } from './nested-mutation-input-resolvers/types';
+import { prisma } from '../../../scripts/prisma';
+import { requirePrisma } from '../../../artifacts';
+import { lowcase } from '../../utils';
+
+const Prisma = requirePrisma(process.cwd());
 
 async function createSingle(
   { data: rawData }: { data: Record<string, any> },
@@ -165,20 +180,69 @@ async function updateSingle(
     rawData
   );
 
-  const { afterOperation, data } = await resolveInputForCreateOrUpdate(
+  const { afterOperation, data, polymorphicRelationData } = await resolveInputForCreateOrUpdate(
     list,
     context,
     rawData,
     item
   );
 
-  const updatedItem = await writeLimit(() =>
-    runWithPrisma(context, list, model => model.update({ where: { id: item.id }, data }))
-  );
+  // TODO
+  // DB transaction for the whole update (implemented using prisma.$transaction)
+  try {
+    const updatedItem = await writeLimit(() =>
+      runWithPrisma(context, list, model => model.update({ where: { id: item.id }, data }))
+    );
 
-  await afterOperation(updatedItem);
+    console.log('polymorphicRelationData', JSON.stringify(polymorphicRelationData, null, 2));
 
-  return updatedItem;
+    if (polymorphicRelationData) {
+      for (const [fieldKey, { connect, disconnect }] of Object.entries(polymorphicRelationData)) {
+        const dbField = list.fields[fieldKey].dbField as PolymorphicRelationDBField;
+        const result = await runWithPrisma(
+          context,
+          { listKey: dbField.joinModelName } as any,
+          async model => {
+            // TODO
+            const sourceIdField = lowcase(list.listKey) + 'Id';
+            const typeField = fieldKey + 'Type';
+            const targetItemId = fieldKey + 'Id';
+
+            const promises = [];
+            for (const connectItem of connect) {
+              const uniqueFieldsData = {
+                [sourceIdField]: item.id,
+                [typeField]: connectItem.type,
+                [targetItemId]: connectItem.id,
+              };
+
+              console.log('uniqueFieldsData', uniqueFieldsData);
+
+              promises.push(
+                model.create({
+                  data: {
+                    ...uniqueFieldsData,
+                    order: 0, // TODO
+                  },
+                })
+              );
+            }
+
+            // TODO disconnect
+
+            return await Promise.allSettled(promises);
+          }
+        );
+        console.log('result', result);
+      }
+    }
+
+    await afterOperation(updatedItem);
+
+    return updatedItem;
+  } catch (e) {
+    throw e;
+  }
 }
 
 export async function updateOne(
@@ -259,74 +323,84 @@ async function getResolvedData(
     throw resolverError(resolverErrors);
   }
 
+  const polymorphicRelationData: {
+    [fieldKey: string]: {
+      connect: string[];
+      disconnect: string[];
+    };
+  } = {};
+
+  const promises = Object.entries(list.fields).map(async ([fieldKey, field]): Promise<any> => {
+    const isPolymorphic = field.dbField.kind === 'polymorphicRelation';
+    const resolvers = inputResolvers[isPolymorphic ? 'polymorphic' : 'standard'];
+
+    const inputResolver = field.input?.[operation]?.resolve;
+    let input = resolvedData[fieldKey];
+    if (inputResolver && (field.dbField.kind === 'relation' || isPolymorphic)) {
+      input = await inputResolver(
+        input,
+        context,
+        // This third argument only applies to relationship fields
+        (() => {
+          if (input === undefined) {
+            // No-op: This is what we want
+            return () => undefined;
+          }
+          if (input === null) {
+            // No-op: Should this be UserInputError?
+            return () => undefined;
+          }
+
+          let resolver;
+          if (field.dbField.mode === 'many') {
+            if (operation === 'create') {
+              resolver = resolvers.resolveRelateToManyForCreateInput;
+            } else {
+              resolver = resolvers.resolveRelateToManyForUpdateInput;
+            }
+          } else {
+            if (operation === 'create') {
+              resolver = resolvers.resolveRelateToOneForCreateInput;
+            } else {
+              resolver = resolvers.resolveRelateToOneForUpdateInput;
+            }
+          }
+
+          if (isPolymorphic) {
+            return (resolver as MutationPolymorphicRelationInputResolver)(
+              nestedMutationState,
+              context,
+              fieldKey,
+              field as InitialisedPolymorphicRelationshipField,
+              list
+            );
+          }
+
+          const dbField = field.dbField as ResolvedRelationDBField;
+          const target = `${list.listKey}.${fieldKey}<${dbField.list}>`;
+          const foreignList = list.lists[dbField.list];
+
+          return (resolver as MutationStandardRelationInputResolver)(
+            nestedMutationState,
+            context,
+            foreignList,
+            target
+          );
+        })()
+      );
+    }
+    if (isPolymorphic) {
+      polymorphicRelationData[fieldKey] = input;
+      // polymorphic relationships are handled separately,
+      // so we don't want to the prisma data here
+      return false;
+    }
+    return [fieldKey, input] as const;
+  });
+
   // Apply relationship field type input resolvers
   resolvedData = Object.fromEntries(
-    await promiseAllRejectWithAllErrors(
-      Object.entries(list.fields).map(async ([fieldKey, field]) => {
-        const inputResolver = field.input?.[operation]?.resolve;
-        let input = resolvedData[fieldKey];
-        if (
-          inputResolver &&
-          (field.dbField.kind === 'relation' || field.dbField.kind === 'polymorphicRelation')
-        ) {
-          input = await inputResolver(
-            input,
-            context,
-            // This third argument only applies to relationship fields
-            (() => {
-              if (input === undefined) {
-                // No-op: This is what we want
-                return () => undefined;
-              }
-              if (input === null) {
-                // No-op: Should this be UserInputError?
-                return () => undefined;
-              }
-
-              const isPolymorphic = field.dbField.kind === 'polymorphicRelation';
-              const resolvers = inputResolvers[isPolymorphic ? 'polymorphic' : 'standard'];
-
-              let resolver;
-              if (field.dbField.mode === 'many') {
-                if (operation === 'create') {
-                  resolver = resolvers.resolveRelateToManyForCreateInput;
-                } else {
-                  resolver = resolvers.resolveRelateToManyForUpdateInput;
-                }
-              } else {
-                if (operation === 'create') {
-                  resolver = resolvers.resolveRelateToOneForCreateInput;
-                } else {
-                  resolver = resolvers.resolveRelateToOneForUpdateInput;
-                }
-              }
-
-              if (isPolymorphic) {
-                return (resolver as MutationPolymorphicRelationInputResolver)(
-                  nestedMutationState,
-                  context,
-                  fieldKey,
-                  field as InitialisedPolymorphicRelationshipField,
-                  list
-                );
-              }
-
-              const dbField = field.dbField as ResolvedRelationDBField;
-              const target = `${list.listKey}.${fieldKey}<${dbField.list}>`;
-              const foreignList = list.lists[dbField.list];
-
-              return (resolver as MutationStandardRelationInputResolver)(
-                nestedMutationState,
-                context,
-                foreignList,
-                target
-              );
-            })()
-          );
-        }
-        return [fieldKey, input] as const;
-      })
-    )
+    (await promiseAllRejectWithAllErrors(promises)).filter(Boolean)
   );
 
   // Resolve input hooks
@@ -363,7 +437,10 @@ async function getResolvedData(
     }
   }
 
-  return resolvedData;
+  return {
+    data: resolvedData,
+    polymorphicRelationData,
+  };
 }
 
 async function resolveInputForCreateOrUpdate(
@@ -386,7 +463,8 @@ async function resolveInputForCreateOrUpdate(
 
   // Take the original input and resolve all the fields down to what
   // will be saved into the database.
-  hookArgs.resolvedData = await getResolvedData(list, hookArgs, nestedMutationState);
+  const resolved = await getResolvedData(list, hookArgs, nestedMutationState);
+  hookArgs.resolvedData = resolved.data;
 
   // Apply all validation checks
   await validateUpdateCreate({ list, hookArgs });
@@ -398,6 +476,7 @@ async function resolveInputForCreateOrUpdate(
   // and the afterOperation hook to be applied
   return {
     data: flattenMultiDbFields(list.fields, hookArgs.resolvedData),
+    polymorphicRelationData: resolved.polymorphicRelationData,
     afterOperation: async (updatedItem: ItemRootValue) => {
       await nestedMutationState.afterOperation();
       await runSideEffectOnlyHook(list, 'afterOperation', {
